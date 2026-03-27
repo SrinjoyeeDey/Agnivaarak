@@ -7,32 +7,42 @@
 
 ---
 
-## Quick Start (Laptop / Demo Mode)
+## Quick Start
 
+### 🖥️ Windows (Automated)
+If you are on Windows, simply run the setup script:
+```powershell
+./setup_windows.bat
+```
+This will create a virtual environment, install dependencies, and download the model weights.
+
+### 🐧 Linux / 🍎 macOS
 ```bash
-# 1. Clone
-git clone https://github.com/your-team/firesuppressor
-cd firesuppressor
+# 1. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
-# 2. Create virtual environment (Python 3.10 required)
-python3.10 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 4. Download / create placeholder model weights
-python models/download_models.py   # real download (~200 MB)
-# OR for offline / CI:
-python models/download_models.py --demo-weights
-
-# 5. Run full demo (no camera, no hardware)
-python main.py --demo
-
-# 6. In a second terminal – start React dashboard
-cd frontend && npm install && npm start
-# Open http://localhost:3000
+# 3. Download model weights
+python models/download_models.py
 ```
+
+### 🚀 Running the System
+
+1. **Start the Backend Node** (Terminal 1)
+```bash
+python main.py --demo
+```
+
+2. **Start the Dashboard** (Terminal 2)
+```bash
+cd frontend
+npm install
+npm start
+```
+Open [http://localhost:3000](http://localhost:3000) to view the live dashboard.
 
 ---
 
@@ -261,5 +271,3 @@ firesuppressor/
     ├── wiring_diagram.md
     └── mosquitto.conf
 ```
-
-## Srinjoyee Dey
