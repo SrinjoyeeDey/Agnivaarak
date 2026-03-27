@@ -1,0 +1,87 @@
+Collecting opencv-python==4.9.0.80 (from -r requirements.txt (line 7))
+  Using cached opencv_python-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting opencv-python-headless==4.9.0.80 (from -r requirements.txt (line 8))
+  Using cached opencv_python_headless-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting ultralytics>=8.2.0 (from -r requirements.txt (line 11))
+  Using cached ultralytics-8.4.27-py3-none-any.whl.metadata (39 kB)
+Collecting torch>=2.2.2 (from -r requirements.txt (line 12))
+  Using cached torch-2.11.0-cp314-cp314-win_amd64.whl.metadata (29 kB)
+Collecting torchvision>=0.17.2 (from -r requirements.txt (line 13))
+  Using cached torchvision-0.26.0-cp314-cp314-win_amd64.whl.metadata (5.5 kB)
+Collecting onnx==1.16.0 (from -r requirements.txt (line 14))
+  Using cached onnx-1.16.0.tar.gz (12.3 MB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting onnxruntime>=1.17.3 (from -r requirements.txt (line 15))
+  Downloading onnxruntime-1.24.4-cp314-cp314-win_amd64.whl.metadata (5.4 kB)
+Collecting transformers>=4.40.1 (from -r requirements.txt (line 19))
+  Downloading transformers-5.3.0-py3-none-any.whl.metadata (32 kB)
+Collecting huggingface-hub>=0.23.0 (from -r requirements.txt (line 20))
+  Downloading huggingface_hub-1.8.0-py3-none-any.whl.metadata (13 kB)
+Collecting datasets>=2.19.0 (from -r requirements.txt (line 21))
+  Downloading datasets-4.8.4-py3-none-any.whl.metadata (19 kB)
+Collecting accelerate>=0.30.0 (from -r requirements.txt (line 22))
+  Downloading accelerate-1.13.0-py3-none-any.whl.metadata (19 kB)
+Collecting fastapi>=0.111.0 (from -r requirements.txt (line 25))
+  Downloading fastapi-0.135.2-py3-none-any.whl.metadata (28 kB)
+Collecting uvicorn>=0.29.0 (from uvicorn[standard]>=0.29.0->-r requirements.txt (line 26))
+  Using cached uvicorn-0.42.0-py3-none-any.whl.metadata (6.7 kB)
+Collecting websockets==12.0 (from -r requirements.txt (line 27))
+  Using cached websockets-12.0-py3-none-any.whl.metadata (6.6 kB)
+Collecting python-multipart==0.0.9 (from -r requirements.txt (line 28))
+  Downloading python_multipart-0.0.9-py3-none-any.whl.metadata (2.5 kB)
+Collecting pydantic>=2.7.1 (from -r requirements.txt (line 29))
+  Using cached pydantic-2.12.5-py3-none-any.whl.metadata (90 kB)
+Collecting httpx>=0.27.0 (from -r requirements.txt (line 30))
+  Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting paho-mqtt==2.0.0 (from -r requirements.txt (line 33))
+  Downloading paho_mqtt-2.0.0-py3-none-any.whl.metadata (23 kB)
+Collecting aiofiles==23.2.1 (from -r requirements.txt (line 34))
+  Downloading aiofiles-23.2.1-py3-none-any.whl.metadata (9.7 kB)
+Collecting numpy>=1.26.4 (from -r requirements.txt (line 37))
+  Using cached numpy-2.4.3-cp314-cp314-win_amd64.whl.metadata (6.6 kB)
+Collecting pillow==10.3.0 (from -r requirements.txt (line 38))
+  Downloading pillow-10.3.0.tar.gz (46.6 MB)
+     ---------------------------------------- 46.6/46.6 MB 3.2 MB/s  0:00:15
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'error'
+  error: subprocess-exited-with-error
+  
+  Getting requirements to build wheel did not run successfully.
+  exit code: 1
+  
+  [21 lines of output]
+  Traceback (most recent call last):
+    File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\.venv\Lib\site-packages\pip\_vendor\pyproject_hooks\_in_process\_in_process.py", line 389, in <module>
+      main()
+      ~~~~^^
+    File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\.venv\Lib\site-packages\pip\_vendor\pyproject_hooks\_in_process\_in_process.py", line 373, in main
+      json_out["return_val"] = hook(**hook_input["kwargs"])
+                               ~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\.venv\Lib\site-packages\pip\_vendor\pyproject_hooks\_in_process\_in_process.py", line 143, in get_requires_for_build_wheel
+      return hook(config_settings)
+    File "C:\Users\SRINJOYEE\AppData\Local\Temp\pip-build-env-qzoko5d5\overlay\Lib\site-packages\setuptools\build_meta.py", line 333, in get_requires_for_build_wheel
+      return self._get_build_requires(config_settings, requirements=[])
+             ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\SRINJOYEE\AppData\Local\Temp\pip-build-env-qzoko5d5\overlay\Lib\site-packages\setuptools\build_meta.py", line 301, in _get_build_requires
+      self.run_setup()
+      ~~~~~~~~~~~~~~^^
+    File "C:\Users\SRINJOYEE\AppData\Local\Temp\pip-build-env-qzoko5d5\overlay\Lib\site-packages\setuptools\build_meta.py", line 317, in run_setup
+      exec(code, locals())
+      ~~~~^^^^^^^^^^^^^^^^
+    File "<string>", line 33, in <module>
+    File "<string>", line 27, in get_version
+  KeyError: '__version__'
+  [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+ERROR: Failed to build 'pillow' when getting requirements to build wheel

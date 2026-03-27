@@ -1,0 +1,52 @@
+name: FireSuppressor CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          # Install headless OpenCV only (no display)
+          grep -v "opencv-python==" requirements.txt | \
+            grep -v "^opencv-python-headless" > /tmp/req.txt
+          echo "opencv-python-headless==4.9.0.80" >> /tmp/req.txt
+          pip install -r /tmp/req.txt
+
+      - name: Create placeholder model weights
+        run: python models/download_models.py --demo-weights
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t firesuppressor:ci --build-arg SKIP_MODEL_DOWNLOAD=1 .
+      - name: Smoke test container
+        run: |
+          docker run --rm -e DEMO_MODE=1 \
+            firesuppressor:ci python -c \
+            "from vision.intensity_analyzer import IntensityAnalyzer; print('✅ import OK')"

@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\main.py", line 26, in <module>
+    from loguru import logger
+ModuleNotFoundError: No module named 'loguru'

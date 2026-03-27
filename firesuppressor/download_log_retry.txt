@@ -1,0 +1,12 @@
+
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\models\download_models.py", line 198, in <module>
+    ok = download_models(args.build_only, args.verify_only)
+  File "C:\Users\SRINJOYEE\Desktop\firesuppressor\firesuppressor\models\download_models.py", line 127, in download_models
+    print(f"\U0001f4e6 {m['name']}  –  {m['desc']}")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\SRINJOYEE\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f4e6' in position 0: character maps to <undefined>

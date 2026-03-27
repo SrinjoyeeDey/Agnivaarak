@@ -1,0 +1,10 @@
+node_modules/
+frontend/node_modules/
+.vscode/
+__pycache__/
+*.pyc
+*.log
+.env
+emergency_snapshots/
+test_out.txt
+test_output.txt

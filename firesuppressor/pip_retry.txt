@@ -1,0 +1,25 @@
+Collecting opencv-python==4.9.0.80 (from -r requirements.txt (line 7))
+  Using cached opencv_python-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting opencv-python-headless==4.9.0.80 (from -r requirements.txt (line 8))
+  Using cached opencv_python_headless-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting ultralytics>=8.2.0 (from -r requirements.txt (line 11))
+  Downloading ultralytics-8.4.27-py3-none-any.whl.metadata (39 kB)
+Collecting torch>=2.2.2 (from -r requirements.txt (line 12))
+  Downloading torch-2.11.0-cp314-cp314-win_amd64.whl.metadata (29 kB)
+Collecting torchvision>=0.17.2 (from -r requirements.txt (line 13))
+  Downloading torchvision-0.26.0-cp314-cp314-win_amd64.whl.metadata (5.5 kB)
+Collecting onnx==1.16.0 (from -r requirements.txt (line 14))
+  Downloading onnx-1.16.0.tar.gz (12.3 MB)
+     ---------------------------------------- 12.3/12.3 MB 1.6 MB/s  0:00:07
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+ERROR: Ignored the following versions that require a different python version: 8.0.10 Requires-Python >=3.7,<=3.11; 8.0.11 Requires-Python >=3.7,<=3.11; 8.0.12 Requires-Python >=3.7,<=3.11; 8.0.13 Requires-Python >=3.7,<=3.11; 8.0.14 Requires-Python >=3.7,<=3.11; 8.0.15 Requires-Python >=3.7,<=3.11; 8.0.16 Requires-Python >=3.7,<=3.11; 8.0.17 Requires-Python >=3.7,<=3.11; 8.0.18 Requires-Python >=3.7,<=3.11; 8.0.19 Requires-Python >=3.7,<=3.11; 8.0.20 Requires-Python >=3.7,<=3.11; 8.0.21 Requires-Python >=3.7,<=3.11; 8.0.22 Requires-Python >=3.7,<=3.11; 8.0.23 Requires-Python >=3.7,<=3.11; 8.0.24 Requires-Python >=3.7,<=3.11; 8.0.25 Requires-Python >=3.7,<=3.11; 8.0.26 Requires-Python >=3.7,<=3.11; 8.0.27 Requires-Python >=3.7,<=3.11; 8.0.28 Requires-Python >=3.7,<=3.11; 8.0.29 Requires-Python >=3.7,<=3.11; 8.0.30 Requires-Python >=3.7,<=3.11; 8.0.31 Requires-Python >=3.7,<=3.11; 8.0.32 Requires-Python >=3.7,<=3.11; 8.0.33 Requires-Python >=3.7,<=3.11; 8.0.34 Requires-Python >=3.7,<=3.11; 8.0.7 Requires-Python >=3.7,<=3.11; 8.0.8 Requires-Python >=3.7,<=3.11; 8.0.9 Requires-Python >=3.7,<=3.11
+ERROR: Could not find a version that satisfies the requirement onnxruntime==1.17.3 (from versions: 1.24.1, 1.24.2, 1.24.3, 1.24.4)
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+ERROR: No matching distribution found for onnxruntime==1.17.3

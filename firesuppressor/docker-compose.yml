@@ -1,0 +1,84 @@
+version: "3.9"
+
+# ============================================================
+# FireSuppressor – Docker Compose
+# Usage: docker-compose up --build
+# Simulates 3 independent detection nodes + MQTT broker
+# ============================================================
+
+services:
+
+  # ── MQTT Broker ─────────────────────────────────────────
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: fs_mqtt_broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"   # WebSocket for browser clients
+    volumes:
+      - ./docs/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  # ── Detection Node 1 (Primary) ─────────────────────────
+  node-1:
+    build: .
+    container_name: fs_node_1
+    depends_on: [mqtt-broker]
+    environment:
+      - NODE_ID=1
+      - DEMO_MODE=1
+      - MQTT_HOST=mqtt-broker
+      - VIDEO_SOURCE=0
+      - ZONE=NORTH
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+
+  # ── Detection Node 2 ────────────────────────────────────
+  node-2:
+    build: .
+    container_name: fs_node_2
+    depends_on: [mqtt-broker]
+    environment:
+      - NODE_ID=2
+      - DEMO_MODE=1
+      - MQTT_HOST=mqtt-broker
+      - VIDEO_SOURCE=demo_fire.mp4
+      - ZONE=EAST
+    ports:
+      - "8002:8000"
+    restart: unless-stopped
+
+  # ── Detection Node 3 ────────────────────────────────────
+  node-3:
+    build: .
+    container_name: fs_node_3
+    depends_on: [mqtt-broker]
+    environment:
+      - NODE_ID=3
+      - DEMO_MODE=1
+      - MQTT_HOST=mqtt-broker
+      - VIDEO_SOURCE=demo_smoke.mp4
+      - ZONE=WEST
+    ports:
+      - "8003:8000"
+    restart: unless-stopped
+
+  # ── React Frontend Dev Server ────────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: fs_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm start"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8001
+      - REACT_APP_WS_URL=ws://localhost:8001
+    depends_on: [node-1]
+
+networks:
+  default:
+    name: firesuppressor_net

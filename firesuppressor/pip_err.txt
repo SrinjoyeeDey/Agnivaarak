@@ -1,0 +1,12 @@
+Collecting opencv-python==4.9.0.80 (from -r requirements.txt (line 7))
+  Using cached opencv_python-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting opencv-python-headless==4.9.0.80 (from -r requirements.txt (line 8))
+  Using cached opencv_python_headless-4.9.0.80-cp37-abi3-win_amd64.whl.metadata (20 kB)
+Collecting ultralytics==8.2.0 (from -r requirements.txt (line 11))
+  Using cached ultralytics-8.2.0-py3-none-any.whl.metadata (40 kB)
+ERROR: Ignored the following versions that require a different python version: 8.0.10 Requires-Python >=3.7,<=3.11; 8.0.11 Requires-Python >=3.7,<=3.11; 8.0.12 Requires-Python >=3.7,<=3.11; 8.0.13 Requires-Python >=3.7,<=3.11; 8.0.14 Requires-Python >=3.7,<=3.11; 8.0.15 Requires-Python >=3.7,<=3.11; 8.0.16 Requires-Python >=3.7,<=3.11; 8.0.17 Requires-Python >=3.7,<=3.11; 8.0.18 Requires-Python >=3.7,<=3.11; 8.0.19 Requires-Python >=3.7,<=3.11; 8.0.20 Requires-Python >=3.7,<=3.11; 8.0.21 Requires-Python >=3.7,<=3.11; 8.0.22 Requires-Python >=3.7,<=3.11; 8.0.23 Requires-Python >=3.7,<=3.11; 8.0.24 Requires-Python >=3.7,<=3.11; 8.0.25 Requires-Python >=3.7,<=3.11; 8.0.26 Requires-Python >=3.7,<=3.11; 8.0.27 Requires-Python >=3.7,<=3.11; 8.0.28 Requires-Python >=3.7,<=3.11; 8.0.29 Requires-Python >=3.7,<=3.11; 8.0.30 Requires-Python >=3.7,<=3.11; 8.0.31 Requires-Python >=3.7,<=3.11; 8.0.32 Requires-Python >=3.7,<=3.11; 8.0.33 Requires-Python >=3.7,<=3.11; 8.0.34 Requires-Python >=3.7,<=3.11; 8.0.7 Requires-Python >=3.7,<=3.11; 8.0.8 Requires-Python >=3.7,<=3.11; 8.0.9 Requires-Python >=3.7,<=3.11
+ERROR: Could not find a version that satisfies the requirement torch==2.2.2 (from versions: 2.9.0, 2.9.1, 2.10.0, 2.11.0)
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+ERROR: No matching distribution found for torch==2.2.2
