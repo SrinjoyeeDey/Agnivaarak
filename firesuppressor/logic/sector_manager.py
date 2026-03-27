@@ -40,6 +40,13 @@ class SectorManager:
             
         return True
 
+    def get_lock_by_fire_id(self, fire_id: str) -> Optional[int]:
+        """Returns the sector_id currently locking this fire_id, if any."""
+        for sid, lock in self._locks.items():
+            if lock["fire_id"] == fire_id:
+                return sid
+        return None
+
     def lock_sector(self, sector_id: int, fire_id: str) -> bool:
         """Locks a sector for a specific fire with a timestamp."""
         self._locks[sector_id] = {

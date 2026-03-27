@@ -137,53 +137,54 @@ class DecisionEngine:
         
         actions    = []
         assigned_devices = set()
-        targeted_positions = [] # List of (cx, cy) already targeted
+        assigned_fires   = set()
 
         for fire in targets:
-            bbox = fire.get("bbox", [0, 0, 0, 0])
             fire_id = fire.get("id", "?")
+            if fire_id in assigned_fires:
+                continue
 
-            # 1. Spatial Mapping: Convert bbox -> Absolute World Angle (Requirement Phase 15)
+            bbox = fire.get("bbox", [0, 0, 0, 0])
+            # 1. Spatial Mapping: Convert bbox -> Absolute World Angle
             pan, tilt = map_bbox_to_angles(bbox, frame_width, frame_height, base_pan=current_angle)
             
-            # 2. Radial Conflict Check: Sector Ownership (Requirement Phase 15 & 2)
-            sector_id = self._sector_mgr.get_sector_id(pan)
-            logger.debug("🎯 Fire {} at Pan {:.1f} -> Sector {}", fire_id, pan, sector_id)
+            # 2. Assignment Logic: Persistent Lock vs. Current Sector
+            # Check if this fire already owns a sector/device
+            locked_sector = self._sector_mgr.get_lock_by_fire_id(fire_id)
+            if locked_sector is not None:
+                sector_id = locked_sector
+            else:
+                sector_id = self._sector_mgr.get_sector_id(pan)
             
-            if self._sector_mgr.is_locked(sector_id, fire_id=fire_id):
-                logger.warning("🛡️ Sector {} is PERSISTENTLY LOCKED by another fire - skipping", sector_id)
-                continue
-            
-                # 3. Multi-device coordination: Assign to the device owning this sector
+            # Find the device for this sector
             best_device_id = None
             for dev_id, config in DEVICES.items():
                 if config["sector_id"] == sector_id:
                     best_device_id = dev_id
                     break
 
-            if best_device_id not in DEVICES:
-                logger.error("🚫 CRITICAL: Invalid Nozzle ID {} generated (Sector {}). Hard-resetting to 1.", 
-                             best_device_id, sector_id)
-                best_device_id = 1
-                
-            # Lock the sector (or device zone)
+            # Safety/Conflict Checks
+            if not best_device_id: continue
+            if best_device_id in assigned_devices:
+                logger.debug("⏳ Device {} already assigned this frame - skipping Fire {}", best_device_id, fire_id)
+                continue
+            
+            if self._sector_mgr.is_locked(sector_id, fire_id=fire_id):
+                logger.warning("🛡️ Sector {} is PERSISTENTLY LOCKED by another fire - skipping", sector_id)
+                continue
+
+            # Lock the sector and track assignment
             self._sector_mgr.lock_sector(sector_id, fire_id)
             assigned_devices.add(best_device_id)
+            assigned_fires.add(fire_id)
 
-            # 2. Fire Classification (Use Stable Consensus from Phase 20)
+            # 3. Fire Classification & Suppression Config
             f_type  = fire.get("fire_type", "a")
             f_label = fire.get("label", "CLASS A (SOLID)")
-            
-            intensity_info = fire.get("intensity", {})
-            f_intensity = intensity_info.get("level", "MEDIUM")
+            f_intensity = fire.get("intensity", {}).get("level", "MEDIUM")
             
             suppression = self._pressure.get_suppression_config(f_type, f_intensity)
-            logger.debug("🎯 Fire {} Decision: Device {}, Type {}, Mode {}", 
-                         fire_id, best_device_id, f_type, suppression["mode"])
             
-            # 5. Continuous targeting: (Already calculated in Step 1)
-            # pan, tilt = map_bbox_to_angles(bbox, frame_width, frame_height)
-
             # 4. Human safety: Overrides suppression mode
             near_human = self._human_in_path(fire, humans)
             mode = suppression["mode"]
@@ -203,10 +204,8 @@ class DecisionEngine:
                             label=f_label)
             actions.append(action)
 
-            # Enhanced Console Output (Requirement Step 10)
-            logger.info("\n[DEVICE {}]\nMode: LOCKED\nFire Type: {}\nIntensity: {}\nPressure: {}\nAgent: {}\nTarget: PAN {:.1f} / TILT {:.1f}",
-                        best_device_id, f_label, f_intensity.upper(), 
-                        suppression["pressure"], suppression["agent"], pan, tilt)
+            logger.info("\n[DEVICE {}] -> FIRE {}\nMode: LOCKED\nType: {}\nTarget: PAN {:.1f} / TILT {:.1f}",
+                        best_device_id, fire_id, f_label, pan, tilt)
 
         logger.info("📡 Generated {} actions for confirmed fires", len(actions))
         return actions

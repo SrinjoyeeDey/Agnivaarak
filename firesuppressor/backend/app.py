@@ -33,6 +33,7 @@ class ManualControlRequest(BaseModel):
                            description="Nozzle to activate (1–4)")
     pressure : str = Field("MEDIUM",
                             pattern="^(LOW|MEDIUM|HIGH|MAX|CRITICAL|OFF)$")
+    agent    : str = Field("WATER", description="Suppression agent (WATER, FOAM, CO2, DRY_POWDER)")
 
 class ManualControlResponse(BaseModel):
     success  : bool
@@ -175,7 +176,7 @@ def create_app(state: Dict[str, Any],
                 status_code=423,
                 detail="Emergency stop is active. Clear it first.")
 
-        ok = nozzle_ctrl.manual_activate(req.nozzle_id, req.pressure)
+        ok = nozzle_ctrl.manual_activate(req.nozzle_id, req.pressure, req.agent)
         state["nozzles"] = nozzle_ctrl.status()
         return ManualControlResponse(
             success   = ok,

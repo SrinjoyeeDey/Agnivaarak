@@ -122,6 +122,9 @@ class FireSuppressionSystem:
             "alerts"       : [],
             "camera_angle" : 0,
             "emergency_stop": False,
+            "temperature"  : 24.5,
+            "humidity"     : 45.0,
+            "system_pressure": 0.0,
         }
 
         # FastAPI app (shares state dict by reference)
@@ -239,8 +242,37 @@ class FireSuppressionSystem:
                     "camera_angle"  : self.camera_ctrl.current_angle(),
                     "nozzles"       : self.nozzle_ctrl.status(),
                     "emergency_dispatched": self.state.get("emergency_dispatched", False),
-                    "emergency_snapshot_url": self.state.get("emergency_snapshot_url", None)
+                    "emergency_snapshot_url": self.state.get("emergency_snapshot_url", None),
+                    "temperature"   : round(self.state["temperature"], 2),
+                    "humidity"      : round(self.state["humidity"], 2),
+                    "system_pressure": round(self.state["system_pressure"], 2),
                 })
+
+                # --- Intensity-Aware Simulation Physics ---
+                active_nozzles = [n for n in (self.state.get("nozzles") or []) if n.get("active")]
+                if active_nozzles:
+                    # Target pressure based on highest active nozzle level
+                    p_map = {"HIGH": 110.0, "MEDIUM": 75.0, "LOW": 40.0}
+                    target_p = max(p_map.get(n.get("pressure"), 0.0) for n in active_nozzles)
+                    
+                    # Smoothed transition to target
+                    if self.state["system_pressure"] < target_p:
+                        self.state["system_pressure"] = min(target_p, self.state["system_pressure"] + 6.0)
+                    else:
+                        self.state["system_pressure"] = max(target_p, self.state["system_pressure"] - 4.0)
+                                        
+                    self.state["humidity"] = min(90.0, self.state["humidity"] + 0.3)
+                    self.state["temperature"] = max(24.5, self.state["temperature"] - 0.08) # Actively cooling
+                else:
+                    # No active suppression
+                    target_p = 0.0
+                    self.state["system_pressure"] = max(target_p, self.state["system_pressure"] - 5.0)
+                    self.state["humidity"] = max(45.0, self.state["humidity"] - 0.1)
+                    
+                    if confirmed_fires:
+                        self.state["temperature"] += 0.15 # Uncontrolled heating
+                    else:
+                        self.state["temperature"] = max(24.5, self.state["temperature"] - 0.05) # Natural ambient cooling
             except Exception as e:
                 logger.error("State update error: {}", e)
 

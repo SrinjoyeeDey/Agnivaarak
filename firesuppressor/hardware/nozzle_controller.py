@@ -45,7 +45,8 @@ PRESSURE_DUTY: Dict[str, int] = {
 }
 
 PWM_FREQUENCY_HZ = 200
-COOLDOWN_DELAY = 2.0
+COOLDOWN_DELAY = 3.0
+MANUAL_COOLDOWN_DELAY = 30.0
 
 
 class NozzleState:
@@ -58,6 +59,7 @@ class NozzleState:
         self.pan = 90.0
         self.tilt = 45.0
         self.last_activated = 0.0
+        self.is_manual = False
         self.status = "IDLE"
         self.fire_type = None
         self.label = None
@@ -150,6 +152,7 @@ class NozzleController:
         f_intens = getattr(action, "intensity", pressure)
 
         nozzle.active = True
+        nozzle.is_manual = False
         nozzle.status = "LOCKED"
         nozzle.mode = mode
         nozzle.pressure = pressure
@@ -288,13 +291,16 @@ class NozzleController:
     def cooldown(self):
         now = time.time()
         for nozzle in self._nozzles.values():
-            if nozzle.active and (now - nozzle.last_activated) > COOLDOWN_DELAY:
+            delay = MANUAL_COOLDOWN_DELAY if nozzle.is_manual else COOLDOWN_DELAY
+            
+            if nozzle.active and (now - nozzle.last_activated) > delay:
                 nozzle.active = False
+                nozzle.is_manual = False
                 nozzle.status = "SCANNING"
                 nozzle.mode = "OFF"
                 nozzle.pressure = "OFF"
                 nozzle.pressure_duty = 0
-                logger.debug("Device_{} returned to SCANNING", nozzle.id)
+                logger.debug("Device_{} returned to SCANNING (delay={:.1f}s)", nozzle.id, delay)
                 if not self._simulated:
                     self._actuate_hardware(nozzle.id, nozzle.pan, nozzle.tilt, "OFF")
                 self._emit_nozzle_command(nozzle)
@@ -319,23 +325,26 @@ class NozzleController:
         self._device_bus.emit("emergency_stop", {"active": True})
         print("  ALL DEVICES STOPPED")
 
-    def manual_activate(self, nozzle_id: int, pressure: str = "MEDIUM") -> bool:
+    def manual_activate(self, nozzle_id: int, pressure: str = "MEDIUM", agent: str = "WATER") -> bool:
         if nozzle_id not in self._nozzles:
             return False
 
         normalized_pressure = self._normalize_pressure(pressure)
         nozzle = self._nozzles[nozzle_id]
         nozzle.active = True
+        nozzle.is_manual = True
         nozzle.status = "MANUAL"
         nozzle.mode = "MANUAL"
         nozzle.pressure = normalized_pressure
+        nozzle.agent = agent.upper()
         nozzle.pressure_duty = self._pressure_to_duty(normalized_pressure)
         nozzle.last_activated = time.time()
         logger.info(
-            "Manual override: device_{} @ {} ({}%)",
+            "Manual override: device_{} @ {} ({}%) agent={}",
             nozzle_id,
             normalized_pressure,
             nozzle.pressure_duty,
+            nozzle.agent
         )
 
         if not self._simulated:

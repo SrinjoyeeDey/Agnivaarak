@@ -4,7 +4,10 @@
 // Falls back to simulated demo data if server unreachable.
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { 
+  Shield, AlertTriangle, Zap, User
+} from 'lucide-react';
 
 // ── Config ────────────────────────────────────────────────
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8000";
@@ -34,6 +37,9 @@ function makeDemoState() {
       { id:3, active: false,                 pressure:"OFF",                   angle:180 },
       { id:4, active: false,                 pressure:"OFF",                   angle:270 },
     ],
+    temperature  : 24.5 + Math.sin(t * 0.2) * 2,
+    humidity     : 45.0 + Math.cos(t * 0.1) * 5,
+    system_pressure: hasFire ? 85.0 + Math.random() * 10 : 0,
     alerts: [],
   };
 }
@@ -59,7 +65,11 @@ function useFireSystem() {
           setHistory(h => [...h.slice(-120), {
             t    : new Date().toLocaleTimeString(),
             fires: data.fires?.length ?? 0,
+            humans: data.humans?.length ?? 0,
             angle: data.camera_angle ?? 0,
+            temp : data.temperature ?? 24,
+            hum  : data.humidity ?? 45,
+            pres : data.system_pressure ?? 0,
           }]);
         };
         wsRef.current = ws;
@@ -70,11 +80,16 @@ function useFireSystem() {
     // Demo refresh when offline
     const demo = setInterval(() => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        setState(makeDemoState());
+        const d = makeDemoState();
+        setState(d);
         setHistory(h => [...h.slice(-120), {
           t    : new Date().toLocaleTimeString(),
-          fires: makeDemoState().fires.length,
-          angle: (Date.now() / 55.5) % 360,
+          fires: d.fires.length,
+          humans: d.humans.length,
+          angle: d.camera_angle,
+          temp : d.temperature,
+          hum  : d.humidity,
+          pres : d.system_pressure,
         }]);
       }
     }, 200);
@@ -173,6 +188,21 @@ function CompassRose({ angle, fires }) {
 
   return (
     <svg viewBox="0 0 180 180" className="w-44 h-44 mx-auto">
+      {/* Gradients for charts */}
+      <defs>
+        <linearGradient id="gradTemp" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%"  stopColor="#f43f5e" stopOpacity={0.3}/>
+          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+        </linearGradient>
+        <linearGradient id="gradPres" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.3}/>
+          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+        </linearGradient>
+        <linearGradient id="gradHum" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3}/>
+          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+        </linearGradient>
+      </defs>
       {/* Outer ring */}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke="#27272a" strokeWidth="2"/>
       {/* Tick marks */}
@@ -225,6 +255,57 @@ function CompassRose({ angle, fires }) {
       {/* Centre dot */}
       <circle cx={cx} cy={cy} r="4" fill="#38bdf8"/>
     </svg>
+  );
+}
+
+function PressureGauge({ value }) {
+  const max = 150;
+  const clamped = Math.min(Math.max(value, 0), max);
+  const percent = clamped / max;
+  const angle = (percent * 270) - 225; // -225 to 45 deg for 270 deg span
+  
+  const getColor = (v) => {
+    if (v > 120) return "#ef4444"; // Alarm red
+    if (v > 90) return "#3b82f6";  // Operational blue
+    return "#10b981";             // Safe green
+  };
+
+  return (
+    <div className="relative w-full aspect-square max-w-[160px] mx-auto">
+      <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-2xl">
+        {/* Background arc */}
+        <path d="M 20 80 A 42 42 0 1 1 80 80" fill="none" stroke="#18181b" strokeWidth="8" strokeLinecap="round"/>
+        {/* Colored progress arc */}
+        <path d="M 20 80 A 42 42 0 1 1 80 80" fill="none" stroke={getColor(clamped)} strokeWidth="8" strokeLinecap="round"
+              strokeDasharray={210} strokeDashoffset={210 - (percent * 210)}
+              className="transition-all duration-1000 ease-out opacity-40"/>
+        
+        {/* Ticks */}
+        {[0, 25, 50, 75, 100, 125, 150].map(v => {
+          const a = (v / 150 * 270) - 225;
+          const r1 = 36, r2 = 42;
+          const x1 = 50 + r1 * Math.cos(a * Math.PI / 180);
+          const y1 = 50 + r1 * Math.sin(a * Math.PI / 180);
+          const x2 = 50 + r2 * Math.cos(a * Math.PI / 180);
+          const y2 = 50 + r2 * Math.sin(a * Math.PI / 180);
+          return <line key={v} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#3f3f46" strokeWidth="1.5"/>;
+        })}
+
+        {/* Needle */}
+        <g transform={`rotate(${angle}, 50, 50)`} className="transition-transform duration-500 ease-in-out">
+          <path d="M 48 50 L 50 15 L 52 50 Z" fill={getColor(clamped)} />
+          <circle cx="50" cy="50" r="4" fill="#09090b" stroke={getColor(clamped)} strokeWidth="2"/>
+        </g>
+
+        {/* Digital Value */}
+        <text x="50" y="75" textAnchor="middle" fill="white" className="text-[12px] font-black tracking-tighter italic">
+          {clamped.toFixed(1)}
+        </text>
+        <text x="50" y="85" textAnchor="middle" fill="#52525b" className="text-[6px] font-black uppercase tracking-[0.2em]">
+          SYSTEM PSI
+        </text>
+      </svg>
+    </div>
   );
 }
 
@@ -324,6 +405,47 @@ function FireCard({ fire, humans }) {
   );
 }
 
+function MetricChart({ title, data, dataKey, color, gradientId, unit, domain }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-5 h-[190px] flex flex-col hover:border-zinc-700 transition-colors group">
+      <div className="flex justify-between items-center mb-3">
+        <span className="text-[10px] font-bold text-zinc-500 tracking-[0.2em] uppercase group-hover:text-zinc-400 transition-colors">{title}</span>
+        <span className="text-sm font-mono font-bold" style={{ color }}>
+          {data[data.length - 1]?.[dataKey]?.toFixed(1)}{unit}
+        </span>
+      </div>
+      <div className="flex-1 w-full min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor={color} stopOpacity={0.3}/>
+                <stop offset="95%" stopColor={color} stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="t" hide />
+            <YAxis domain={domain || [0, 'auto']} hide />
+            <Tooltip
+              contentStyle={{ background: "#09090b", border: "1px solid #27272a", borderRadius: 8, fontSize: 10, color: "#fff" }}
+              itemStyle={{ color: color }}
+              labelStyle={{ display: "none" }}
+            />
+            <Area
+              type="monotone"
+              dataKey={dataKey}
+              stroke={color}
+              strokeWidth={2}
+              fillOpacity={1}
+              fill={`url(#${gradientId})`}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
   const { state, online, history, sendCmd } = useFireSystem();
@@ -331,276 +453,436 @@ export default function App() {
   
   const [manualNozzle,   setManualNozzle]   = useState(1);
   const [manualPressure, setManualPressure] = useState("MEDIUM");
+  const [manualAgent,    setManualAgent]    = useState("WATER");
 
   const eStop        = ()  => sendCmd("/emergency-stop");
   const clearEStop   = ()  => sendCmd("/clear-emergency-stop");
   const manualSpray  = ()  => sendCmd("/manual-control",
-    { nozzle_id: manualNozzle, pressure: manualPressure });
+    { nozzle_id: manualNozzle, pressure: manualPressure, agent: manualAgent });
 
-  const fireCount = state.fires?.length ?? 0;
-  const estop     = state.emergency_stop;
+  const fireCount  = state.fires?.length ?? 0;
+  const humanCount = state.humans?.length ?? 0;
+  const estop      = state.emergency_stop;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans p-4"
+    <div className="min-h-screen bg-black text-zinc-100 font-sans p-4"
          style={{fontFamily:"'IBM Plex Mono', monospace"}}>
+      
+      {/* Custom Scrollbar Styles */}
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+      `}</style>
 
       {/* ── Header ───────────────────────────────────────── */}
-      <header className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">🔥</span>
+      <header className="flex items-center justify-between mb-8 border-b border-zinc-900 pb-4">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center shadow-lg shadow-red-900/20">
+            <span className="text-2xl">🔥</span>
+          </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight">FireSuppressor</h1>
-            <p className="text-xs text-zinc-500">
-              Node {state.node_id} · Zone {state.zone} · {new Date().toLocaleTimeString()}
+            <h1 className="text-2xl font-black tracking-tighter uppercase italic">Agnivaarak <span className="text-zinc-500 font-light not-italic text-sm ml-2">v1.0.4</span></h1>
+            <p className="text-[10px] text-zinc-600 font-bold tracking-[0.2em] uppercase">
+              Terminal {state.node_id} / Zone {state.zone} / System Secure
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <div className="text-right mr-4">
+             <div className="text-[10px] text-zinc-600 font-bold uppercase">Uptime</div>
+             <div className="text-xs font-mono text-zinc-400">04:12:09:44</div>
+          </div>
           <StatusBadge online={online}/>
           {estop && (
-            <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold
-                             rounded-full animate-pulse">
-              ⛔ E-STOP
+            <span className="px-4 py-1.5 bg-red-600 text-white text-[10px] font-black
+                             rounded-sm animate-pulse shadow-lg shadow-red-900/40">
+              CRITICAL: E-STOP
             </span>
           )}
         </div>
       </header>
 
-      {/* ── Emergency Escalation Modal ──────────────────── */}
+      {/* ── Emergency Modal ────────────────────────────── */}
       {state.emergency_dispatched && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-950/80 backdrop-blur-sm animate-pulse">
-          <div className="bg-red-900 border-4 border-red-500 rounded-2xl p-8 max-w-3xl text-center shadow-2xl shadow-red-900/50">
-            <div className="text-7xl mb-4 animate-bounce">🚨</div>
-            <h2 className="text-4xl font-black text-white tracking-widest uppercase mb-4">
-              Emergency Services Dispatched
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-red-950/90 backdrop-blur-xl p-4 md:p-8">
+          <div className="bg-zinc-950 border-2 border-red-600 rounded-lg p-6 md:p-10 max-w-4xl w-full max-h-[95vh] overflow-y-auto shadow-[0_0_100px_rgba(220,38,38,0.3)] custom-scrollbar">
+            <div className="text-6xl md:text-8xl mb-6">📢</div>
+            <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter uppercase mb-6 italic leading-none">
+              Fire Department <br/><span className="text-red-600">Dispatched</span>
             </h2>
-            <p className="text-lg text-red-100 font-semibold mb-6">
-              A prolonged Out-of-Control fire was detected. The local Fire Department (+1-911) has automatically been provided with zone metadata and a high-resolution snapshot.
+            <p className="text-base md:text-xl text-zinc-400 mb-8 border-l-4 border-red-600 pl-6 leading-relaxed">
+              Automatic escalation triggered. Emergency units are en route to <span className="text-white font-bold">{state.zone}</span>. 
+              Live surveillance feed and metadata have been uplined to regional dispatch.
             </p>
             
             {state.emergency_snapshot_url && (
-              <div className="mb-6 rounded-xl overflow-hidden border-2 border-red-700 shadow-inner bg-black flex justify-center">
-                <img 
-                  src={state.emergency_snapshot_url} 
-                  alt="Emergency Evidence Snapshot" 
-                  className="max-h-72 object-contain"
-                />
+              <div className="mb-8 rounded-lg overflow-hidden border border-zinc-800 bg-black aspect-video flex items-center justify-center relative shadow-2xl group">
+                <div className="absolute top-4 left-4 bg-red-600 text-[10px] font-bold px-2 py-1 text-white uppercase animate-pulse z-10">Live Evidence Buffer</div>
+                <img src={state.emergency_snapshot_url} alt="Snap" className="max-h-full w-full object-contain" />
+                <div className="absolute inset-0 bg-red-600/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
               </div>
             )}
 
-            <div className="text-sm px-4 py-2 bg-red-950 rounded border border-red-700 font-mono text-red-300">
-              ESCALATION PROTOCOL ACTIVE · PLEASE EVACUATE THE AREA
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="space-y-4">
+                <div className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">Safety Protocols</div>
+                <div className="space-y-2">
+                  {[
+                    "Evacuate building immediately via nearest exit",
+                    "Do not use elevators - use stairwells only",
+                    "Assemble at designated North-Wing point",
+                    "Await further instructions from first responders"
+                  ].map((text, i) => (
+                    <div key={i} className="flex items-start gap-3 bg-zinc-900/50 p-3 rounded border border-zinc-800/50">
+                      <div className="mt-0.5"><Shield size={14} className="text-emerald-500" /></div>
+                      <span className="text-xs text-zinc-300 font-bold leading-tight">{text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">Emergency Status</div>
+                <div className="bg-red-950/20 rounded-xl border border-red-900/40 p-5 space-y-4">
+                   <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-400">911 Dispatch</span>
+                      <span className="text-[10px] font-black text-emerald-400 animate-pulse uppercase tracking-wider">Connected</span>
+                   </div>
+                   <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-400">Call Reference</span>
+                      <span className="text-[10px] font-mono text-white">#FIRE-DX-{Math.floor(Math.random()*9000)+1000}</span>
+                   </div>
+                   <div className="h-0.5 bg-zinc-800 w-full" />
+                   <div className="flex items-center gap-3">
+                      <AlertTriangle size={18} className="text-red-500 animate-bounce" />
+                      <div>
+                        <div className="text-xs font-black text-white italic uppercase tracking-tighter">Emergency Out Of Control</div>
+                        <div className="text-[9px] text-red-500 font-bold uppercase">Automated Suppression Overwhelmed</div>
+                      </div>
+                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-zinc-900 rounded border border-zinc-800">
+                <div className="text-[10px] text-zinc-600 font-bold uppercase mb-1">Status</div>
+                <div className="text-red-500 font-bold uppercase tracking-widest animate-pulse">EVACUATE IMMEDIATELY</div>
+              </div>
+              <div className="p-4 bg-zinc-900 rounded border border-zinc-800 text-center flex items-center justify-center">
+                 <button onClick={() => sendCmd("/clear-emergency-stop")} className="text-xs font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-widest border border-zinc-700 px-6 py-2 rounded hover:border-zinc-500">Acknowledge & Clear</button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Alert banner ─────────────────────────────────── */}
-      {fireCount > 0 && !estop && (
-        <div className="mb-4 px-4 py-2 rounded-lg border border-red-600
-                        bg-red-950/40 text-red-300 text-sm font-semibold
-                        flex items-center gap-2 animate-pulse">
-          🔥 {fireCount} active fire{fireCount>1?"s":""} detected!
-          {state.humans?.length > 0 && " · ⚠️ Humans in zone"}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* ── Left column ──────────────────────────────── */}
-        <div className="space-y-4">
-
-          {/* Compass / camera */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-3 tracking-widest">
-              CAMERA & FIRE MAP
-            </div>
-            <CompassRose
-              angle={state.camera_angle??0}
-              fires={state.fires??[]}/>
-            <div className="text-center mt-2 text-xs text-zinc-500">
-              Camera: <span className="text-sky-400 font-semibold">
-                {(state.camera_angle??0).toFixed(1)}°
-              </span>
+      {/* ── System Safety Banner ─────────────────────── */}
+      <div className={`mb-6 px-5 py-4 rounded-xl border-l-4 flex items-center justify-between transition-all duration-500 overflow-hidden relative ${
+        estop ? "bg-red-950/40 border-red-600 text-red-500 shadow-lg shadow-red-900/10" :
+        fireCount > 0 ? "bg-orange-950/40 border-orange-500 text-orange-400 shadow-lg shadow-orange-900/10" :
+        "bg-emerald-950/20 border-emerald-600 text-emerald-500 shadow-lg shadow-emerald-900/5"
+      }`}>
+        <div className="flex items-center gap-4 z-10">
+          <div className={`w-2 h-2 rounded-full animate-ping ${estop?"bg-red-500":fireCount>0?"bg-orange-500":"bg-emerald-500"}`}/>
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-0.5">System Health & Safety Status</div>
+            <div className="text-sm font-black uppercase italic tracking-tight">
+              {estop ? "CRITICAL: EMERGENCY STOP ENGAGED" :
+               fireCount > 0 ? `WARNING: ${fireCount} FIRE VECTOR(S) DETECTED` :
+               "SAFETY CHECK: ALL SECTORS SECURE"}
             </div>
           </div>
+        </div>
+        <div className="flex gap-8 text-right z-10">
+           <div>
+             <div className="text-[9px] font-bold uppercase opacity-40">Active Hazards</div>
+             <div className={`text-sm font-mono font-bold ${fireCount>0?"text-red-500":"text-zinc-600"}`}>{fireCount}</div>
+           </div>
+           <div className="border-l border-white/5 pl-8">
+             <div className="text-[9px] font-bold uppercase opacity-40">Bio Signatures</div>
+             <div className={`text-sm font-mono font-bold ${humanCount>0?"text-yellow-500":"text-emerald-500"}`}>{humanCount}</div>
+           </div>
+        </div>
+        {/* Background glow effects */}
+        <div className={`absolute right-0 top-0 w-64 h-full opacity-20 blur-3xl pointer-events-none ${
+          estop ? "bg-red-600" : fireCount > 0 ? "bg-orange-600" : "bg-emerald-600"
+        }`}/>
+      </div>
 
-          {/* Humans */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-2 tracking-widest">
-              HUMAN DETECTION
+      {/* ── Dashboard Grid ──────────────────────────────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 content-start">
+
+        {/* ── Charts column ────────────────────────────── */}
+        <div className="xl:col-span-1 space-y-4">
+          <MetricChart 
+            title="Fire Vectors" 
+            data={history} 
+            dataKey="fires" 
+            color="#ef4444" 
+            gradientId="gradFire"
+            unit="" 
+            domain={[0, 5]}
+          />
+          <MetricChart 
+            title="Ambient Temp" 
+            data={history} 
+            dataKey="temp" 
+            color="#f43f5e" 
+            gradientId="gradTemp"
+            unit="°C"
+            domain={[20, 100]}
+          />
+          <MetricChart 
+            title="System Pressure" 
+            data={history} 
+            dataKey="pres" 
+            color="#3b82f6" 
+            gradientId="gradPres"
+            unit=" PSI"
+            domain={[0, 150]}
+          />
+          <MetricChart 
+            title="Relative Hum" 
+            data={history} 
+            dataKey="hum" 
+            color="#10b981" 
+            gradientId="gradHum"
+            unit="%"
+            domain={[20, 100]}
+          />
+        </div>
+
+        {/* ── Main content (2 cols) ─────────────────────── */}
+        <div className="xl:col-span-2 space-y-6">
+          
+          {/* Top Row: Map and Active Fires */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+            {/* Compass Area */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6 flex flex-col items-center justify-center min-h-[380px]">
+              <div className="w-full flex justify-between items-center mb-6">
+                <span className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase underline decoration-sky-500 underline-offset-4">Spatial Awareness</span>
+                <span className="text-[10px] font-mono text-zinc-600 uppercase">Radar v2.4</span>
+              </div>
+              <CompassRose angle={state.camera_angle??0} fires={state.fires??[]}/>
+              <div className="mt-8 grid grid-cols-3 gap-4 w-full">
+                 <div className="text-center">
+                   <div className="text-[8px] text-zinc-600 font-bold uppercase mb-1 tracking-widest leading-none">Scanning</div>
+                   <div className="text-base font-mono text-zinc-100 italic">{(state.camera_angle??0).toFixed(1)}°</div>
+                 </div>
+                 <div className="text-center border-l border-zinc-800">
+                   <div className="text-[8px] text-zinc-600 font-bold uppercase mb-1 tracking-widest leading-none">Fire Cnt</div>
+                   <div className={`text-base font-mono italic ${fireCount > 0 ? "text-red-500" : "text-emerald-500"}`}>{fireCount}</div>
+                 </div>
+                 <div className="text-center border-l border-zinc-800">
+                   <div className="text-[8px] text-zinc-600 font-bold uppercase mb-1 tracking-widest leading-none">Bio Cnt</div>
+                   <div className={`text-base font-mono italic ${humanCount > 0 ? "text-yellow-500" : "text-emerald-500"}`}>{humanCount}</div>
+                 </div>
+              </div>
             </div>
-            {state.humans?.length > 0 ? (
-              <div className="space-y-1">
-                {state.humans.map((h,i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <span>👤</span>
-                    <span className="text-yellow-400">
-                      Person at ({h.bbox[0]+h.bbox[2]/2|0}, {h.bbox[1]+h.bbox[3]/2|0})
-                    </span>
-                    <span className="text-zinc-600 text-xs">
-                      {(h.confidence*100).toFixed(0)}%
-                    </span>
+
+            {/* Active Fires List */}
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6 flex flex-col h-full min-h-[380px]">
+              <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase mb-4">Active Fire Vectors</div>
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                {fireCount > 0 ? (
+                  <div className="space-y-3">
+                    {state.fires.map(f => (
+                      <FireCard key={f.id} fire={f} humans={state.humans??[]}/>
+                    ))}
                   </div>
-                ))}
-                <p className="text-xs text-yellow-600 mt-1">
-                  ⚠️ Spray path adjusted – SURROUND mode active
-                </p>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-zinc-700 italic border-2 border-dashed border-zinc-900 rounded-xl">
+                    <span className="text-4xl mb-2 opacity-20">🛡️</span>
+                    <span className="text-[10px] uppercase font-bold tracking-widest">Sectors Secured</span>
+                  </div>
+                )}
               </div>
-            ) : (
-              <p className="text-zinc-600 text-sm">No humans detected</p>
-            )}
-          </div>
-        </div>
-
-        {/* ── Centre column ────────────────────────────── */}
-        <div className="space-y-4">
-
-          {/* Nozzle grid */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-3 tracking-widest">
-              NOZZLE STATUS
             </div>
-            <div className="grid grid-cols-2 gap-2">
+          </div>
+
+          {/* Bottom Row: Nozzle Array */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase">Actuator Node Array // Active Status</div>
+              <div className="text-[10px] font-mono text-zinc-700 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">4x S-PUMP NODES ONLINE</div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
               {(state.nozzles??[]).map(n => (
                 <NozzleCard key={n.id} nozzle={n}/>
               ))}
             </div>
           </div>
-
-          {/* Active fires */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-3 tracking-widest">
-              ACTIVE FIRES ({fireCount})
-            </div>
-            {fireCount > 0 ? (
-              <div className="space-y-2">
-                {state.fires.map(f => (
-                  <FireCard key={f.id} fire={f} humans={state.humans??[]}/>
-                ))}
-              </div>
-            ) : (
-              <div className="text-zinc-600 text-sm py-3 text-center">
-                ✅ No active fires
-              </div>
-            )}
-          </div>
         </div>
 
         {/* ── Right column ─────────────────────────────── */}
-        <div className="space-y-4">
-
-          {/* Control panel */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-3 tracking-widest">
-              MANUAL CONTROL
+        <div className="xl:col-span-1 space-y-6">
+          
+          {/* Pressure Hub */}
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-inner relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+              <Zap size={60} className="text-blue-500" />
             </div>
-
-            {/* E-Stop */}
+            <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase mb-4 relative z-10">Pressure Output Hub</div>
+            <PressureGauge value={state.system_pressure || 0} />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800/50 text-center">
+                 <div className="text-[8px] text-zinc-600 font-bold uppercase">Line Status</div>
+                 <div className="text-[10px] font-black text-emerald-500 italic uppercase italic">Stabilized</div>
+              </div>
+              <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800/50 text-center">
+                 <div className="text-[8px] text-zinc-600 font-bold uppercase">Pump Load</div>
+                 <div className={`text-[10px] font-black italic uppercase italic ${state.system_pressure > 80 ? 'text-blue-400' : 'text-zinc-600'}`}>
+                    {state.system_pressure > 80 ? 'Heavy' : 'Standby'}
+                 </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Manual Control */}
+          <div className="rounded-2xl border border-blue-900/40 bg-zinc-900/50 p-6 shadow-lg shadow-blue-950/10">
+            <div className="text-[10px] font-bold text-blue-500 tracking-[0.3em] uppercase mb-6 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"/> Manual Override
+            </div>
+            
             {!estop ? (
               <button onClick={eStop}
-                className="w-full py-3 rounded-xl bg-red-700 hover:bg-red-600
-                           active:scale-95 text-white font-bold text-sm
-                           transition-all duration-150 mb-3 border border-red-500">
-                ⛔ EMERGENCY STOP
+                className="w-full py-4 rounded bg-red-600/10 hover:bg-red-600/20
+                           active:scale-[0.98] text-red-500 font-black text-xs
+                           transition-all duration-150 mb-6 border border-red-600/30 uppercase tracking-[0.2em] shadow-lg shadow-red-950/20">
+                Init Emergency Stop
               </button>
             ) : (
               <button onClick={clearEStop}
-                className="w-full py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600
-                           active:scale-95 text-white font-bold text-sm
-                           transition-all duration-150 mb-3 border border-emerald-500">
-                ✅ CLEAR EMERGENCY STOP
+                className="w-full py-4 rounded bg-emerald-600/10 hover:bg-emerald-600/20
+                           active:scale-[0.98] text-emerald-500 font-black text-xs
+                           transition-all duration-150 mb-6 border border-emerald-600/30 uppercase tracking-[0.2em] shadow-lg shadow-emerald-950/20">
+                Release System Lock
               </button>
             )}
 
-            {/* Manual spray controls */}
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-xs text-zinc-500 mb-1 block">NOZZLE</label>
+            <div className="space-y-4 pt-4 border-t border-zinc-800/50">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[9px] text-zinc-600 font-bold uppercase mb-2 block tracking-widest">Port</label>
                   <select value={manualNozzle}
                     onChange={e=>setManualNozzle(+e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg
-                               px-2 py-1.5 text-sm text-zinc-200 focus:outline-none">
+                    className="w-full bg-black border border-zinc-800 rounded-sm
+                               px-3 py-2 text-xs text-zinc-200 focus:outline-none font-bold uppercase tracking-tighter">
                     {[1,2,3,4].map(n=>(
-                      <option key={n} value={n}>Nozzle {n} ({(n-1)*90}°)</option>
+                      <option key={n} value={n}>N-{n} ({(n-1)*90}°)</option>
                     ))}
                   </select>
                 </div>
-                <div className="flex-1">
-                  <label className="text-xs text-zinc-500 mb-1 block">PRESSURE</label>
+                <div>
+                  <label className="text-[9px] text-zinc-600 font-bold uppercase mb-2 block tracking-widest">Level</label>
                   <select value={manualPressure}
                     onChange={e=>setManualPressure(e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg
-                               px-2 py-1.5 text-sm text-zinc-200 focus:outline-none">
+                    className="w-full bg-black border border-zinc-800 rounded-sm
+                               px-3 py-2 text-xs text-zinc-200 focus:outline-none font-bold uppercase tracking-tighter">
                     {["LOW","MEDIUM","HIGH"].map(p=>(
                       <option key={p}>{p}</option>
                     ))}
                   </select>
                 </div>
               </div>
+              <div>
+                <label className="text-[9px] text-zinc-600 font-bold uppercase mb-2 block tracking-widest">Suppressant agent</label>
+                <select value={manualAgent}
+                  onChange={e=>setManualAgent(e.target.value)}
+                  className="w-full bg-black border border-zinc-800 rounded-sm
+                             px-3 py-2 text-xs text-zinc-200 focus:outline-none font-bold uppercase tracking-tighter">
+                  {["WATER","FOAM","CO2","POWDER"].map(a=>(
+                    <option key={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
               <button onClick={manualSpray} disabled={estop}
-                className="w-full py-2 rounded-xl bg-blue-700 hover:bg-blue-600
-                           disabled:bg-zinc-800 disabled:text-zinc-600
-                           active:scale-95 text-white font-semibold text-sm
-                           transition-all duration-150 border border-blue-500
-                           disabled:border-zinc-700">
-                💧 Manual Spray
+                className="w-full py-3 rounded bg-blue-600 hover:bg-blue-500
+                           disabled:bg-zinc-900 disabled:text-zinc-700
+                           active:scale-[0.98] text-white font-black text-xs
+                           transition-all duration-150 uppercase tracking-[0.2em] shadow-xl shadow-blue-900/10 border border-blue-400/20">
+                Manual Discharge
               </button>
             </div>
           </div>
 
-          {/* History chart */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
-            <div className="text-xs font-bold text-zinc-500 mb-3 tracking-widest">
-              FIRE COUNT HISTORY
-            </div>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={history.slice(-100)}>
-                <XAxis dataKey="t" hide/>
-                <YAxis domain={[0, 'auto']} width={20}
-                  tick={{fontSize:9, fill:"#71717a"}}/>
-                <Tooltip
-                  contentStyle={{background:"#18181b",border:"1px solid #3f3f46",
-                                 borderRadius:8,fontSize:11}}
-                  labelStyle={{color:"#a1a1aa"}}/>
-                <Line type="monotone" dataKey="fires" stroke="#ef4444"
-                  strokeWidth={2} dot={false} isAnimationActive={false}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          {/* Tactical Intel / Missing graphs */}
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+            <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase mb-4">Tactical Safety Status</div>
+            
+            <div className="space-y-5">
+              <div className="space-y-4">
+                <MetricChart 
+                  title="Bio Correlation" 
+                  data={history} 
+                  dataKey="humans" 
+                  color="#fbbf24" 
+                  gradientId="gradHumans"
+                  unit=" Bio-Sigs" 
+                  domain={[0, 5]}
+                />
+              </div>
 
-          {/* MQTT status */}
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-3">
-            <div className="text-xs font-bold text-zinc-500 mb-2 tracking-widest">
-              SYSTEM INFO
-            </div>
-            <div className="space-y-1 text-xs">
-              {[
-                ["Node ID",    state.node_id],
-                ["Zone",       state.zone],
-                ["Camera",     `${(state.camera_angle??0).toFixed(1)}°`],
-                ["Fires",      fireCount],
-                ["Humans",     state.humans?.length??0],
-                ["E-Stop",     estop?"ENGAGED":"CLEAR"],
-              ].map(([k,v])=>(
-                <div key={k} className="flex justify-between">
-                  <span className="text-zinc-600">{k}</span>
-                  <span className={`font-semibold ${
-                    k==="E-Stop"&&estop?"text-red-400":
-                    k==="Fires"&&fireCount>0?"text-red-400":"text-zinc-300"}`}>
-                    {v}
-                  </span>
+              <div className="p-5 bg-black/60 rounded-xl border border-zinc-800 shadow-inner">
+                <div className="text-[10px] text-zinc-500 font-black uppercase mb-4 tracking-[0.2em]">
+                  HUMAN DETECTION
                 </div>
-              ))}
+                {state.humans?.length > 0 ? (
+                  <div className="space-y-3">
+                    {state.humans.map((h,i) => {
+                      const [x1, y1, x2, y2] = h.bbox || [0,0,0,0];
+                      const cx = Math.round((x1 + x2) / 2);
+                      const cy = Math.round((y1 + y2) / 2);
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <User size={14} className="text-indigo-500 fill-indigo-500/20" />
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-bold text-amber-500">Person at ({cx}, {cy})</span>
+                            <span className="text-[10px] font-mono text-zinc-600">{(h.confidence*100).toFixed(0)}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {fireCount > 0 && (
+                      <div className="pt-3 mt-3 border-t border-zinc-900 flex items-center gap-2">
+                        <AlertTriangle size={12} className="text-amber-600" />
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-tight italic">
+                          Spray path adjusted – SURROUND mode active
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-6 flex flex-col items-center justify-center border border-dashed border-zinc-900 rounded-lg">
+                    <Shield size={20} className="text-zinc-800 mb-2" />
+                    <span className="text-[9px] uppercase font-bold text-zinc-700 tracking-widest">No Bio-Intrusion</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-zinc-900/50 rounded border border-zinc-800/50">
+                <div className="text-[9px] text-zinc-600 font-bold uppercase mb-2 tracking-[0.2em]">Diagnostic Link</div>
+                <div className="grid grid-cols-2 gap-y-2 text-[10px] font-mono">
+                  <span className="text-zinc-600">ID:</span> <span className="text-zinc-400">AGNI-0x{state.node_id?.toString(16).toUpperCase()}</span>
+                  <span className="text-zinc-600">LINK:</span> <span className={online ? "text-emerald-500" : "text-yellow-500"}>{online ? "CRYPTED_AES" : "OFFLINE_LOC"}</span>
+                  <span className="text-zinc-600">MODE:</span> <span className="text-blue-500">AUTO_FIRE_S</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* ── Footer ───────────────────────────────────────── */}
-      <footer className="mt-6 text-center text-xs text-zinc-700">
-        FireSuppressor v1.0 · ⚠️ Simulation Mode · All sprays are virtual
+      <footer className="mt-12 flex justify-between items-center text-[9px] text-zinc-800 font-bold tracking-[0.4em] uppercase border-t border-zinc-900 pt-6">
+          <div>Agnivaarak Advanced Fire Defense • Unit 2026.x</div>
+          <div className="flex gap-6">
+             <span>Simulation: {state.fire_detected ? "Active" : "Neutral"}</span>
+             <span>Network: Secure</span>
+          </div>
       </footer>
     </div>
   );

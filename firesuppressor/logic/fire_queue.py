@@ -151,12 +151,9 @@ class FireQueue:
         """Merge new detections into queue with Duo-Stage Confidence Filtering."""
         now = time.time()
 
-        # Phase 16 & 19: Spatial Clustering for Blue Flames
-        blue_dets = [d for d in detections if d.get("is_blue", False)]
-        other_dets = [d for d in detections if not d.get("is_blue", False)]
-        
-        clustered_blue = self._cluster_detections(blue_dets, threshold=150.0)
-        final_detections = other_dets + clustered_blue
+        # Phase 16, 19 & 22: Unified Spatial Clustering for ALL Fires
+        # Prevents fragmented bboxes from triggering multiple nozzles
+        final_detections = self._cluster_detections(detections, threshold=180.0)
 
         # 1. Update existing/New
         matched_ids = set()

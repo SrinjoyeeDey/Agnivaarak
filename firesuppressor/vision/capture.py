@@ -14,6 +14,7 @@ from typing import Generator, Tuple
 
 import cv2
 import numpy as np
+from loguru import logger
 
 
 FrameMeta = dict   # {"source": str, "ts": float, "frame_id": int}
@@ -31,10 +32,28 @@ class FrameSource:
     def start(self):
         if self._demo:
             return   # no hardware needed
+        
         src = self._camera if self._camera is not None else self._video
-        self._cap = cv2.VideoCapture(1)
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open video source: {src}")
+        if src is None:
+            raise ValueError("No video source provided (demo, camera, or video)")
+
+        # On Windows, try CAP_DSHOW for webcams if default fails
+        backends = [None, cv2.CAP_DSHOW] if isinstance(src, int) else [None]
+        
+        for backend in backends:
+            try:
+                if backend is not None:
+                    self._cap = cv2.VideoCapture(src, backend)
+                else:
+                    self._cap = cv2.VideoCapture(src)
+                
+                if self._cap.isOpened():
+                    logger.success(f"Opened video source {src} with backend {'DSHOW' if backend else 'Default'}")
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to open source {src} with backend {backend}: {e}")
+
+        raise RuntimeError(f"Cannot open video source: {src}. Please ensure your camera is connected and not in use by another app.")
 
     def stop(self):
         if self._cap:
