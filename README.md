@@ -33,7 +33,9 @@ python models/download_models.py
 
 1. **Start the Backend Node** (Terminal 1)
 ```bash
-python main.py --demo
+python main.py --demo (For Demo only, no real detection)
+
+.\.venv\Scripts\python.exe firesuppressor/main.py --camera 0 (To open Dashcam)
 ```
 
 2. **Start the Dashboard** (Terminal 2)
