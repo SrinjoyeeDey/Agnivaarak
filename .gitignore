@@ -1,0 +1,34 @@
+node_modules/
+frontend/node_modules/
+.vscode/
+__pycache__/
+*.pyc
+*.log
+.env
+emergency_snapshots/
+test_out.txt
+test_output.txt
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Model weights (large binary files - run download_models.py after clone)
+models/weights/*.pt
+models/weights/*.onnx
+
+# Temporary debug/log files generated during development
+download_log*.txt
+pip_err*.txt
+pip_retry*.txt
+err*.txt
+
+# pytest cache artifacts
+pytest-cache-files-*/
+.pytest_cache/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
