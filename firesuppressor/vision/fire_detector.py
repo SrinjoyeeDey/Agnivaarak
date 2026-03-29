@@ -37,15 +37,32 @@ class FireDetector:
     _BLUE_UPPER = np.array([140, 255, 255], dtype=np.uint8)
 
     def __init__(self, model_path: str = None,
-                 confidence: float = 0.25):
+                 confidence: float = 0.25,
+                 collect_data: bool = False):
         self.confidence  = confidence
-        if model_path is None:
-            self._model_path = Path(__file__).parent.parent / "models" / "weights" / "fire_yolo.pt"
-        else:
+        self.collect_data = collect_data
+        self.data_dir    = Path("data/collected")
+        
+        # Priority for model weights: 
+        # 1. Newest best training run -> 2. Default provided weights -> 3. Fallback
+        best_run_path = Path("runs/detect/fire/weights/best.pt")
+        default_path  = Path(__file__).parent.parent / "models" / "weights" / "fire_yolo.pt"
+        
+        if model_path is not None:
             self._model_path = Path(model_path)
+        elif best_run_path.exists():
+            self._model_path = best_run_path
+            logger.info("🎯 FireDetector: Using NEWEST training weights from {}", best_run_path)
+        else:
+            self._model_path = default_path
         self._model      = None
         self._using_yolo = False
         self._history    = deque(maxlen=5) # Last 5 frames for flicker test
+        
+        if self.collect_data:
+            (self.data_dir / "images").mkdir(parents=True, exist_ok=True)
+            (self.data_dir / "labels").mkdir(parents=True, exist_ok=True)
+            
         self._load_model()
 
     def _load_model(self):
@@ -92,7 +109,36 @@ class FireDetector:
             if is_new:
                 detections.append(blue)
         
+        if self.collect_data and detections:
+            self._save_training_sample(frame, detections)
+            
         return detections
+
+    def _save_training_sample(self, frame: np.ndarray, detections: List[DetectionResult]):
+        """Saves image and YOLO-format annotations for custom training."""
+        import uuid
+        sample_id = str(uuid.uuid4())[:8]
+        img_path = self.data_dir / "images" / f"sample_{sample_id}.jpg"
+        lbl_path = self.data_dir / "labels" / f"sample_{sample_id}.txt"
+        
+        # Save Image
+        cv2.imwrite(str(img_path), frame)
+        
+        # Save YOLO Labels [class_id x_center y_center width height] (normalized 0-1)
+        h, w = frame.shape[:2]
+        with open(lbl_path, "w") as f:
+            for det in detections:
+                bx, by, bw, bh = det["bbox"]
+                # Convert to YOLO format
+                x_center = (bx + bw / 2) / w
+                y_center = (by + bh / 2) / h
+                nw = bw / w
+                nh = bh / h
+                # class_id 0 for fire
+                class_id = 0 
+                f.write(f"{class_id} {x_center:.6f} {y_center:.6f} {nw:.6f} {nh:.6f}\n")
+        
+        logger.debug("📸 Saved training sample: {}", sample_id)
 
     def _detect_blue(self, frame: np.ndarray) -> List[DetectionResult]:
         """Heuristic to catch LPG/Alcohol blue fires with temporal flicker validation."""
@@ -127,7 +173,11 @@ class FireDetector:
                 # Average flicker score in active detection area
                 active_flicker = np.mean(temp_variance[mask[y:y+h, x:x+w] > 0])
                 
-                if active_flicker < 0.5:  # Ultimate Sensitivity (Phase 21 Stabilized)
+                # Confidence-Weighted Flicker Test
+                # If YOLO is very sure (>0.7), the flicker requirement is relaxed.
+                # If it's a weak detection, we require stronger flicker verification.
+                flicker_threshold = 0.25 if self._using_yolo else 0.4
+                if active_flicker < flicker_threshold:
                     continue
             
             results.append({
@@ -225,7 +275,7 @@ class FireDetector:
         detections = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 800:          # Phase 6: Increased 400 -> 800 for noise suppression
+            if area < 1200:          # Noise suppression increased to 1200
                 continue
             x, y, w, h = cv2.boundingRect(cnt)
             detections.append({

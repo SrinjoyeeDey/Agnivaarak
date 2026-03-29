@@ -62,6 +62,10 @@ class StatusResponse(BaseModel):
     nozzles      : list[NozzleDetailed]
     camera_angle : float
     emergency_stop: bool
+    emergency_mode: bool = False
+    infrared     : float = 0.0
+    temperature  : float = 25.0
+    nearby_stations: list = []
     ts           : float
 
 
@@ -122,6 +126,10 @@ def create_app(state: Dict[str, Any],
     async def start_ws_broadcaster():
         async def _broadcast():
             while True:
+                # Add dynamic sensor data if not present (for simulation)
+                if "temperature" not in state: state["temperature"] = 25.0
+                if "infrared" not in state: state["infrared"] = 100.0
+                
                 payload = {**state, "ts": time.time()}
                 # Convert non-serialisable objects
                 payload = json.loads(json.dumps(payload, default=str))
@@ -152,8 +160,64 @@ def create_app(state: Dict[str, Any],
             nozzles       = state["nozzles"],
             camera_angle  = state["camera_angle"],
             emergency_stop= state["emergency_stop"],
+            emergency_mode= state.get("emergency_mode", False),
+            infrared      = state.get("infrared", 0.0),
+            temperature   = state.get("temperature", 25.0),
+            nearby_stations= state.get("nearby_stations", []),
             ts            = time.time(),
         )
+
+    @app.get("/emergency/status", tags=["emergency"])
+    async def get_emergency_status():
+        """Returns current emergency mode state."""
+        return {
+            "emergency_mode": state.get("emergency_mode", False),
+            "emergency_stop": state.get("emergency_stop", False),
+            "fire_detected": state.get("fire_detected", False),
+            "ts": time.time()
+        }
+
+    @app.get("/sensors", tags=["monitoring"])
+    async def get_sensors():
+        """Returns real-time sensor data."""
+        return {
+            "temperature": state.get("temperature", 25.0),
+            "infrared": state.get("infrared", 0.0),
+            "humidity": state.get("humidity", 45.0),
+            "ts": time.time()
+        }
+
+    @app.post("/sos-alert", tags=["emergency"])
+    async def post_sos_alert(payload: dict):
+        """Simulate sending SOS to fire department."""
+        logger.warning("🚨 SOS ALERT SENT: {}", payload)
+        state.setdefault("alerts", []).append({
+            "type": "SOS",
+            "payload": payload,
+            "ts": time.time()
+        })
+        return {"status": "SOS_DISPATCHED", "ref": f"SOS-{int(time.time())}"}
+
+    @app.post("/speaker-control", tags=["emergency"])
+    async def post_speaker_control(req: dict):
+        """Control building speakers."""
+        message = req.get("message", "Evacuate immediately")
+        logger.info("🔊 SPEAKER BROADCAST: '{}'", message)
+        return {"status": "broadcast_sent", "message": message}
+
+    @app.get("/emergency/nearby-stations", tags=["emergency"])
+    async def get_nearby_stations(lat: float = 0.0, lon: float = 0.0):
+        """Fetches nearby fire stations via Overpass API (mocked for now)."""
+        # In a real system, we'd use requests to Overpass API:
+        # url = f"https://overpass-api.de/api/interpreter?data=[out:json];node(around:5000,{lat},{lon})[amenity=fire_station];out;"
+        # For this demo, we'll return a fixed set of stations.
+        stations = [
+            {"name": "Central Fire Station", "dist": "1.2 km", "lat": lat+0.01, "lon": lon+0.01},
+            {"name": "North-Wing Station 4", "dist": "3.5 km", "lat": lat+0.03, "lon": lon-0.02},
+            {"name": "Industrial Safety Hub", "dist": "0.8 km", "lat": lat-0.005, "lon": lon+0.005},
+        ]
+        state["nearby_stations"] = stations
+        return {"stations": stations}
 
     @app.get("/alerts", tags=["monitoring"])
     async def get_alerts():

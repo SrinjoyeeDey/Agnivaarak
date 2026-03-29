@@ -1,0 +1,13 @@
+
+# data/fire.yaml – YOLOv8 dataset config
+path  : C:\Users\SRINJOYEE\Desktop\firesuppressor\data\fire_dataset
+train : images/train
+val   : images/val
+test  : images/test
+
+nc    : 2
+names : [fire, smoke]
+
+# Augmentation (handled by ultralytics Albumentations integration)
+# Additional: mosaic=1.0, mixup=0.15, flipud=0.0, fliplr=0.5
+# hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=0, translate=0.1, scale=0.5

@@ -144,6 +144,18 @@ class DecisionEngine:
             if fire_id in assigned_fires:
                 continue
 
+            # --- Authenticity Gating (Part 5 & 6) ---
+            auth_score = fire.get("authenticity", 0.6)
+            if auth_score < 0.4:
+                logger.warning("🚫 Fire {} rejected as FAKE (confidence: {:.2f})", fire_id, auth_score)
+                continue
+            
+            is_uncertain = auth_score < 0.75
+            if is_uncertain:
+                logger.info("⚠️ Fire {} is UNCERTAIN (confidence: {:.2f}) - monitoring only", fire_id, auth_score)
+                # We skip suppression for uncertain fires, but keep them in targets for dashboard
+                continue
+
             bbox = fire.get("bbox", [0, 0, 0, 0])
             # 1. Spatial Mapping: Convert bbox -> Absolute World Angle
             pan, tilt = map_bbox_to_angles(bbox, frame_width, frame_height, base_pan=current_angle)
@@ -183,13 +195,20 @@ class DecisionEngine:
             f_label = fire.get("label", "CLASS A (SOLID)")
             f_intensity = fire.get("intensity", {}).get("level", "MEDIUM")
             
+            if f_intensity == "HIGH":
+                self._emergency_stop = False # Make sure not stopped
+                logger.critical("🔥 HIGH INTENSITY FIRE DETECTED! Triggering Emergency Mode.")
+                # We'll rely on main.py to update the global emergency_mode state
+            
             suppression = self._pressure.get_suppression_config(f_type, f_intensity)
             
             # 4. Human safety: Overrides suppression mode
             near_human = self._human_in_path(fire, humans)
             mode = suppression["mode"]
             if near_human:
+                # Requirement Step 4: Avoid direct spray if humans nearby
                 mode = Action.SURROUND
+                # If very close, maybe STOP is safer, but SURROUND is requested
                 logger.warning("⚠️ Human near fire {} – forcing SURROUND mode", fire_id)
 
             action = Action(nozzle_id=best_device_id,

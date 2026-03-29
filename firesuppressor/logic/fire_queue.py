@@ -75,6 +75,7 @@ class FireTarget:
         # Initialize with anchor frames to prevent rapid flip-flopping
         self.label_history = deque([self.label] * 10, maxlen=30)
         self.type_history = deque([self.fire_type] * 10, maxlen=30)
+        self.authenticity = 0.6 # Initial default (Uncertain)
 
     def update(self, detection: dict):
         self.bbox       = detection["bbox"]
@@ -138,7 +139,8 @@ class FireTarget:
             "fire_type" : self.stable_type,
             "label"     : self.stable_label,
             "age"       : round(time.time() - self.first_seen, 1),
-            "stability" : round(self.hits / (self.hits + self.misses), 2) if (self.hits+self.misses)>0 else 0
+            "stability" : round(self.hits / (self.hits + self.misses), 2) if (self.hits+self.misses)>0 else 0,
+            "authenticity" : round(getattr(self, "authenticity", 0.6), 2)
         }
 
 
@@ -169,7 +171,7 @@ class FireQueue:
                 if conf >= 0.25:
                     matched.update(det)
                     matched_ids.add(matched.id)
-            elif conf >= 0.60 and len(self._targets) < self._max * 2:
+            elif conf >= 0.40 and len(self._targets) < self._max * 2:
                 target = FireTarget(det)
                 self._targets[target.id] = target
                 matched_ids.add(target.id)
@@ -224,6 +226,9 @@ class FireQueue:
             cluster_items = [d["det"] for d in data if d["cluster"] == c]
             if not cluster_items: continue
             
+            # Pick the "best" item in the cluster (highest confidence) to lead
+            best_item = max(cluster_items, key=lambda d: d.get("confidence", 0.0))
+            
             x1 = min(float(d["bbox"][0]) for d in cluster_items)
             y1 = min(float(d["bbox"][1]) for d in cluster_items)
             x2 = max(float(d["bbox"][0]) + float(d["bbox"][2]) for d in cluster_items)
@@ -231,13 +236,13 @@ class FireQueue:
             
             results.append({
                 "bbox": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
-                "confidence": max(d["confidence"] for d in cluster_items),
-                "is_blue": True,
-                "class_name": "fire",
-                "fire_type": "b",
-                "label": "CLASS B (GAS)",
-                "intensity": cluster_items[0].get("intensity"),
-                "angle": cluster_items[0].get("angle"),
+                "confidence": best_item.get("confidence", 0.5),
+                "is_blue": any(d.get("is_blue", False) for d in cluster_items),
+                "class_name": best_item.get("class_name", "fire"),
+                "fire_type": best_item.get("fire_type", "a"),
+                "label": best_item.get("label", "CLASS A (SOLID)"),
+                "intensity": best_item.get("intensity"),
+                "angle": best_item.get("angle"),
                 "has_smoke": any(d.get("has_smoke", False) for d in cluster_items)
             })
         return results

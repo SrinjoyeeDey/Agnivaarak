@@ -60,8 +60,14 @@ names : [fire, smoke]
 
 
 def prepare_data():
-    """Download dataset from Roboflow if RF_API_KEY env var is set."""
+    """Download dataset from Roboflow or prepare local collected data."""
     import os
+    import shutil
+    
+    data_dir = Path("data/fire_dataset")
+    collected_dir = Path("data/collected")
+    
+    # 1. Download Roboflow if API key is present
     api_key = os.getenv("RF_API_KEY")
     if api_key:
         try:
@@ -69,16 +75,37 @@ def prepare_data():
             rf = Roboflow(api_key=api_key)
             proj = rf.workspace().project("fire-detection-j1c3p")
             dataset = proj.version(1).download("yolov8")
-            print(f"✅ Dataset downloaded to: {dataset.location}")
+            print(f"✅ Roboflow dataset downloaded to: {dataset.location}")
         except ImportError:
             print("pip install roboflow  # to auto-download")
-    else:
-        print("ℹ  Set RF_API_KEY env var for Roboflow download.")
-        print("   Or manually extract your dataset to data/fire_dataset/")
+    
+    # 2. Integrate Local Collected Data
+    if collected_dir.exists():
+        print(f"📂 Integrating local collected data from {collected_dir}...")
+        # Create Yolo structure in fire_dataset if it doesn't exist
+        for split in ["train", "val"]:
+            (data_dir / "images" / split).mkdir(parents=True, exist_ok=True)
+            (data_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
+        
+        # Move collected images (simple 80/20 split)
+        all_imgs = list((collected_dir / "images").glob("*.jpg"))
+        import random
+        random.shuffle(all_imgs)
+        split_idx = int(len(all_imgs) * 0.8)
+        
+        for i, img in enumerate(all_imgs):
+            split = "train" if i < split_idx else "val"
+            lbl = collected_dir / "labels" / (img.stem + ".txt")
+            if lbl.exists():
+                shutil.copy(img, data_dir / "images" / split / img.name)
+                shutil.copy(lbl, data_dir / "labels" / split / lbl.name)
+        
+        print(f"✅ Merged {len(all_imgs)} local images into {data_dir}")
 
     # Write YAML
     Path("data").mkdir(exist_ok=True)
-    Path("data/fire.yaml").write_text(FIRE_YAML)
+    yaml_content = FIRE_YAML.replace("data/fire_dataset", str(data_dir.absolute()))
+    Path("data/fire.yaml").write_text(yaml_content)
     print("✅ data/fire.yaml written.")
 
 
@@ -86,8 +113,23 @@ def train(data: str, epochs: int, batch: int,
           imgsz: int, lr: float, resume: bool):
     from ultralytics import YOLO
 
-    # Start from small pre-trained backbone (not from scratch!)
-    model = YOLO("yolov8s.pt")
+    # Search for the last checkpoint recursively in the runs/detect folder
+    workspace_root = Path(__file__).parent.parent.parent
+    runs_dir = workspace_root / "runs" / "detect"
+    
+    checkpoint = None
+    if resume and runs_dir.exists():
+        # Find all last.pt files and pick the most recent one
+        last_pts = list(runs_dir.rglob("last.pt"))
+        if last_pts:
+            checkpoint = sorted(last_pts, key=lambda x: x.stat().st_mtime)[-1]
+    
+    if resume and checkpoint and checkpoint.exists():
+        print(f"🚀 Found checkpoint for resumption: {checkpoint}")
+        model = YOLO(checkpoint)
+    else:
+        print(f"🌟 Starting from pre-trained backbone: yolov8s.pt")
+        model = YOLO("yolov8s.pt")
 
     results = model.train(
         data       = data,

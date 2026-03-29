@@ -12,7 +12,7 @@ from loguru import logger
 import time
 
 class SectorManager:
-    def __init__(self, sector_width: float = 45.0, cooldown: float = 5.0):
+    def __init__(self, sector_width: float = 45.0, cooldown: float = 1.5):
         self.sector_width = sector_width
         self.cooldown     = cooldown
         # sector_index -> {"fire_id": str, "last_seen": float}

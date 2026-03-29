@@ -23,6 +23,7 @@ import signal
 import sys
 import threading
 import time
+import numpy as np
 from loguru import logger
 from rich.console import Console
 from rich.panel import Panel
@@ -33,6 +34,7 @@ from vision.capture import FrameSource
 from vision.fire_detector import FireDetector
 from vision.human_detector import HumanDetector
 from vision.intensity_analyzer import IntensityAnalyzer
+from vision.fire_authenticity_analyzer import FireAuthenticityAnalyzer
 from logic.decision_engine import DecisionEngine
 from logic.fire_queue import FireQueue
 from hardware.device_bus import DeviceBus
@@ -80,11 +82,17 @@ class FireSuppressionSystem:
         self.frame_src        = FrameSource(args)
         self.fire_detector    = FireDetector(
             model_path=None,
-            confidence=0.45)
+            confidence=0.45,
+            collect_data=getattr(self.args, "collect_data", False))
         self.human_detector   = HumanDetector(
             model_path=None,
             confidence=0.50)
         self.intensity_analyzer = IntensityAnalyzer()
+        self.auth_analyzer = FireAuthenticityAnalyzer(
+            history_len=30,
+            simulate_fake=getattr(self.args, "simulate_fake_fire", False),
+            simulate_real=getattr(self.args, "simulate_real_fire", False)
+        )
 
         # ── Logic ────────────────────────────────────────
         self.fire_queue  = FireQueue(max_targets=4)
@@ -122,9 +130,12 @@ class FireSuppressionSystem:
             "alerts"       : [],
             "camera_angle" : 0,
             "emergency_stop": False,
+            "emergency_mode": False,
             "temperature"  : 24.5,
             "humidity"     : 45.0,
+            "infrared"     : 100.0,
             "system_pressure": 0.0,
+            "nearby_stations": [],
         }
 
         # FastAPI app (shares state dict by reference)
@@ -171,6 +182,25 @@ class FireSuppressionSystem:
                 fb["angle"] = pan
 
             # 5) Decision engine runs unconditionally to allow queue to prune stale targets (Phase 9)
+            # Update authenticity for all tracked targets
+            all_targets = self.decision._queue._targets
+            h, w = frame.shape[:2]
+            for fid, target in all_targets.items():
+                # Distance factor: 1.0 = near (large bbox), 2.0 = far (small bbox)
+                area = target.bbox[2] * target.bbox[3]
+                dist_factor = np.clip(2.0 - (area / (w * h / 4)), 1.0, 2.0)
+                
+                # Update authenticity score
+                score = self.auth_analyzer.update(
+                    fid, frame, target.bbox, 
+                    self.state["temperature"], self.state["infrared"],
+                    distance_factor=dist_factor
+                )
+                target.authenticity = score
+            
+            # Cleanup analyzer for removed targets
+            self.auth_analyzer.cleanup(list(all_targets.keys()))
+
             confirmed_fires = self.decision._queue.all()
             
             if fire_boxes:
@@ -207,9 +237,9 @@ class FireSuppressionSystem:
                         "intensity": fb["intensity"], "angle": fb.get("angle", 0)
                     }
                     self.state["alerts"] = (self.state["alerts"] + [alert])[-50:]
-            else:
-                # No new fire pixels detected -> ensure cooldown triggers for devices not governed by ghost logic
-                self.nozzle_ctrl.cooldown()
+            
+            # Phase 22: Ensure idle nozzles ALWAYS scan/cooldown, even if some fires exist
+            self.nozzle_ctrl.cooldown()
 
             # 4) Update shared state (Every frame)
             try:
@@ -232,6 +262,9 @@ class FireSuppressionSystem:
                 # Phase 12: Physical Hardware Alarm
                 if confirmed_fires:
                     self.nozzle_ctrl.trigger_alarm()
+                    # Trigger EMERGENCY_MODE if any fire is HIGH intensity
+                    if any(f.get("intensity", {}).get("level") == "HIGH" for f in confirmed_fires):
+                        self.state["emergency_mode"] = True
                 else:
                     self.nozzle_ctrl.stop_alarm()
 
@@ -241,10 +274,12 @@ class FireSuppressionSystem:
                     "humans"        : human_boxes,
                     "camera_angle"  : self.camera_ctrl.current_angle(),
                     "nozzles"       : self.nozzle_ctrl.status(),
+                    "emergency_mode": self.state.get("emergency_mode", False),
                     "emergency_dispatched": self.state.get("emergency_dispatched", False),
                     "emergency_snapshot_url": self.state.get("emergency_snapshot_url", None),
                     "temperature"   : round(self.state["temperature"], 2),
                     "humidity"      : round(self.state["humidity"], 2),
+                    "infrared"      : round(self.state["infrared"], 2),
                     "system_pressure": round(self.state["system_pressure"], 2),
                 })
 
@@ -273,6 +308,18 @@ class FireSuppressionSystem:
                         self.state["temperature"] += 0.15 # Uncontrolled heating
                     else:
                         self.state["temperature"] = max(24.5, self.state["temperature"] - 0.05) # Natural ambient cooling
+
+                # --- Sensor Simulation Flag Logic ---
+                if getattr(self.args, "simulate_sensors", False):
+                    # Add some jitter to sensors
+                    import random
+                    self.state["temperature"] += (random.random() - 0.5) * 0.2
+                    self.state["infrared"] = max(0, self.state["infrared"] + (random.random() - 0.5) * 5)
+                    if confirmed_fires:
+                        self.state["infrared"] = min(1000, self.state["infrared"] + 50)
+                    else:
+                        self.state["infrared"] = max(100, self.state["infrared"] - 10)
+
             except Exception as e:
                 logger.error("State update error: {}", e)
 
@@ -324,6 +371,13 @@ def parse_args():
                    help="FastAPI port (default 8000)")
     p.add_argument("--real-hardware", action="store_true",
                    help="⚠️  Enable real GPIO/serial actuators")
+    p.add_argument("--simulate-sensors", action="store_true",
+                   help="Enable real-time sensor jitter simulation")
+    p.add_argument("--simulate-sos", action="store_true",
+                   help="Log SOS alerts to backend for testing")
+    p.add_argument("--collect-data", action="store_true", help="Save frames with detections for training")
+    p.add_argument("--simulate-fake-fire", action="store_true", help="Force authenticity scores to stay low (screen test)")
+    p.add_argument("--simulate-real-fire", action="store_true", help="Force authenticity scores to stay high (physical fire test)")
     return p.parse_args()
 
 

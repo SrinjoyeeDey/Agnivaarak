@@ -46,7 +46,7 @@ loguru>=0.7.2
 # --- Hardware (optional – mocked when GPIO not available) ---
 # RPi.GPIO>=0.7.1                  # Raspberry Pi only
 # Adafruit-PCA9685>=1.0.1         # PWM servo driver
-# pyserial>=3.5                    # Arduino / serial fallback
+pyserial>=3.5                    # Arduino / serial fallback
 
 # --- Testing ---
 pytest>=8.2.0

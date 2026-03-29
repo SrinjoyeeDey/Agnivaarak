@@ -17,6 +17,17 @@ from typing import Dict, List
 from loguru import logger
 
 from hardware.device_bus import DeviceBus
+from hardware.arduino_comm import send_to_arduino, close_arduino_connection
+
+# Mode mapping for Arduino (0: STOP, 1: DIRECT, 2: SURROUND)
+ARDUINO_MODES = {
+    "STOP": 0,
+    "OFF": 0,
+    "DIRECT": 1,
+    "SURROUND": 2,
+    "PRECISE": 1,
+    "MANUAL": 1,
+}
 
 # GPIO pin map: nozzle_id -> (solenoid_pin, pump_relay_pin)
 NOZZLE_PINS: Dict[int, tuple[int, int]] = {
@@ -164,6 +175,16 @@ class NozzleController:
         nozzle.fire_type = f_type
         nozzle.intensity = f_intens
         nozzle.last_activated = time.time()
+
+        # ===== ADDED CODE START =====
+        # Arduino Serial Integration Hook: Numeric Mapping Requirement
+        mode_val = 1 if mode != "STOP" else 0
+        # If emergency_mode was passed in action (not yet implemented in Action class)
+        # For now, we use 1 for FIRE.
+        
+        send_to_arduino(pan, tilt, nozzle.pressure, mode_val, 
+                        nozzle.fire_type or "A", nozzle.intensity or "LOW")
+        # ===== ADDED CODE END =====
 
         logger.info(
             "Nozzle {} EXECUTE: mode={} pressure={} duty={} agent={}",
@@ -321,7 +342,15 @@ class NozzleController:
             nozzle.pressure_duty = 0
             if not self._simulated:
                 self._actuate_hardware(nozzle.id, nozzle.pan, nozzle.tilt, "OFF")
+            self.stop_alarm()  # Ensure alarm stops on Emergency
             self._emit_nozzle_command(nozzle)
+        
+        # ===== ADDED CODE START =====
+        # Arduino Emergency Stop: Mapped as (90, 45, "OFF", 2, "A", "LOW")
+        # Mode 2 = EMERGENCY
+        send_to_arduino(90, 45, "OFF", 2, "A", "LOW")
+        # ===== ADDED CODE END =====
+
         self._device_bus.emit("emergency_stop", {"active": True})
         print("  ALL DEVICES STOPPED")
 
@@ -368,6 +397,9 @@ class NozzleController:
             except Exception:
                 pass
         self._device_bus.close()
+        # ===== ADDED CODE START =====
+        close_arduino_connection()
+        # ===== ADDED CODE END =====
 
     @staticmethod
     def _normalize_pressure(pressure: str | None) -> str:

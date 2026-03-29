@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { 
-  Shield, AlertTriangle, Zap, User
+  Shield, AlertTriangle, Zap, User, Camera, Radio, Thermometer, Flame, Info, MapPin
 } from 'lucide-react';
 
 // ── Config ────────────────────────────────────────────────
@@ -39,7 +39,13 @@ function makeDemoState() {
     ],
     temperature  : 24.5 + Math.sin(t * 0.2) * 2,
     humidity     : 45.0 + Math.cos(t * 0.1) * 5,
+    infrared     : 100 + Math.random() * 50 + (hasFire ? 400 : 0),
     system_pressure: hasFire ? 85.0 + Math.random() * 10 : 0,
+    emergency_mode: hasFire && Math.random() > 0.5,
+    nearby_stations: [
+      {name: "Central Fire Station", dist: "1.2 km", lat: 40.7128, lon: -74.0060},
+      {name: "North-Wing Station 4", dist: "3.5 km", lat: 40.7130, lon: -74.0050}
+    ],
     alerts: [],
   };
 }
@@ -56,7 +62,11 @@ function useFireSystem() {
     function connect() {
       try {
         ws = new WebSocket(`${WS_URL}/ws`);
-        ws.onopen    = ()  => setOnline(true);
+        ws.onopen    = ()  => {
+          setOnline(true);
+          // Fetch nearby stations once on connect
+          fetch(`${API_URL}/emergency/nearby-stations`).catch(() => {});
+        };
         ws.onclose   = ()  => { setOnline(false); setTimeout(connect, 3000); };
         ws.onerror   = ()  => setOnline(false);
         ws.onmessage = (e) => {
@@ -69,7 +79,9 @@ function useFireSystem() {
             angle: data.camera_angle ?? 0,
             temp : data.temperature ?? 24,
             hum  : data.humidity ?? 45,
+            ir   : data.infrared ?? 100,
             pres : data.system_pressure ?? 0,
+            emergency: data.emergency_mode ?? false
           }]);
         };
         wsRef.current = ws;
@@ -89,10 +101,12 @@ function useFireSystem() {
           angle: d.camera_angle,
           temp : d.temperature,
           hum  : d.humidity,
+          ir   : d.infrared,
           pres : d.system_pressure,
+          emergency: d.emergency_mode
         }]);
       }
-    }, 200);
+    }, 500); // Slower demo refresh for stability
 
     return () => { ws?.close(); clearInterval(demo); };
   }, []);
@@ -449,7 +463,9 @@ function MetricChart({ title, data, dataKey, color, gradientId, unit, domain }) 
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
   const { state, online, history, sendCmd } = useFireSystem();
-  useAudioAlarm(state.fire_detected);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  
+  useAudioAlarm(state.fire_detected || state.emergency_mode);
   
   const [manualNozzle,   setManualNozzle]   = useState(1);
   const [manualPressure, setManualPressure] = useState("MEDIUM");
@@ -457,12 +473,29 @@ export default function App() {
 
   const eStop        = ()  => sendCmd("/emergency-stop");
   const clearEStop   = ()  => sendCmd("/clear-emergency-stop");
+  const triggerSOS   = ()  => sendCmd("/sos-alert", { 
+    location: state.zone, 
+    intensity: state.fires?.[0]?.level || "HIGH",
+    humans_present: state.humans?.length > 0 ? "YES" : "NO",
+    fire_type: state.fires?.[0]?.fire_type || "A",
+    system_action: "SUPPRESSION_ACTIVE"
+  });
+  const broadcastMsg = (msg) => sendCmd("/speaker-control", { message: msg });
+
   const manualSpray  = ()  => sendCmd("/manual-control",
     { nozzle_id: manualNozzle, pressure: manualPressure, agent: manualAgent });
 
   const fireCount  = state.fires?.length ?? 0;
   const humanCount = state.humans?.length ?? 0;
   const estop      = state.emergency_stop;
+  const emergency  = state.emergency_mode;
+
+  // Auto-switch to emergency tab if emergency mode activates
+  useEffect(() => {
+    if (emergency && activeTab !== "emergency") {
+      setActiveTab("emergency");
+    }
+  }, [emergency]);
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans p-4"
@@ -503,6 +536,30 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* ── Navigation Tabs ────────────────────────────── */}
+      <nav className="flex items-center gap-2 mb-6 border-b border-zinc-900 pb-0.5 overflow-x-auto custom-scrollbar">
+        {[
+          { id: "dashboard", label: "Dashboard", icon: <Shield size={14} /> },
+          { id: "emergency", label: "Emergency", icon: <AlertTriangle size={14} /> },
+          { id: "surveillance", label: "Surveillance", icon: <Camera size={14} /> },
+          { id: "sensors", label: "Sensors", icon: <Thermometer size={14} /> },
+          { id: "safety", label: "Safety Ops", icon: <Radio size={14} /> },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${
+              activeTab === tab.id 
+                ? "text-blue-500 border-blue-500 bg-blue-500/5" 
+                : "text-zinc-600 border-transparent hover:text-zinc-400 hover:bg-zinc-900"
+            } ${emergency && tab.id === 'emergency' ? 'text-red-500 border-red-500 animate-pulse' : ''}`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
       {/* ── Emergency Modal ────────────────────────────── */}
       {state.emergency_dispatched && (
@@ -611,8 +668,218 @@ export default function App() {
         }`}/>
       </div>
 
-      {/* ── Dashboard Grid ──────────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 content-start">
+      {/* ── Main Content Area ───────────────────────────── */}
+      {activeTab === "surveillance" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 min-h-[600px]">
+          {[1, 2, 3, 4].map(node => (
+            <div key={node} className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4 aspect-video flex flex-col">
+              <div className="flex justify-between items-center mb-4">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Node 0{node} // Feed</span>
+                <span className="flex items-center gap-1.5 text-[8px] font-black text-emerald-500 uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"/> LIVE
+                </span>
+              </div>
+              <div className="flex-1 bg-black rounded-lg border border-zinc-800 flex items-center justify-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/20 to-transparent pointer-events-none"/>
+                <Camera size={48} className="text-zinc-800 group-hover:text-blue-500/20 transition-colors" />
+                <div className="absolute bottom-4 left-4 text-[10px] font-mono text-zinc-500">
+                  {node === 1 ? "MASTER_CAM_01" : `AUX_CAM_0${node}`}
+                </div>
+                {state.fire_detected && node === 1 && (
+                  <div className="absolute top-4 right-4 bg-red-600 text-[8px] font-black px-2 py-1 text-white uppercase animate-pulse">
+                    Fire Detected
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "sensors" && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+             <div className="space-y-6">
+                <MetricChart title="Infrared Signature" data={history} dataKey="ir" color="#f97316" gradientId="gradIR" unit=" IR" domain={[0, 1000]} />
+                <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
+                   <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase mb-4">Thermal Heat Map (IR)</div>
+                   <div className="h-48 rounded bg-gradient-to-r from-blue-900 via-yellow-600 to-red-600 relative overflow-hidden">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                         <div className="w-32 h-32 rounded-full bg-white/10 blur-3xl animate-pulse" 
+                              style={{ transform: `translateX(${(state.camera_angle - 180) / 2}px)` }}/>
+                      </div>
+                      <div className="absolute bottom-4 right-4 text-white font-black text-2xl italic tracking-tighter">
+                         {state.infrared?.toFixed(1)} <span className="text-sm not-italic opacity-60 font-bold">VAL</span>
+                      </div>
+                   </div>
+                </div>
+             </div>
+             <div className="space-y-6">
+                <MetricChart title="Ambient Temperature" data={history} dataKey="temp" color="#ef4444" gradientId="gradTemp" unit=" °C" domain={[0, 120]} />
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6 flex flex-col items-center justify-center">
+                      <Thermometer size={32} className={state.temperature > 50 ? "text-red-500 animate-bounce" : "text-blue-400"} />
+                      <div className="mt-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Current Temp</div>
+                      <div className="text-2xl font-black italic">{state.temperature?.toFixed(1)}°C</div>
+                   </div>
+                   <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6 flex flex-col items-center justify-center">
+                      <Flame size={32} className={state.fire_detected ? "text-orange-500 animate-pulse" : "text-zinc-700"} />
+                      <div className="mt-4 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Fire Risk</div>
+                      <div className="text-2xl font-black italic">{state.fire_detected ? "CRITICAL" : "LOW"}</div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "safety" && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+           <div className="md:col-span-2 space-y-6">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8">
+                 <h3 className="text-xl font-black uppercase italic tracking-tighter mb-6 flex items-center gap-3">
+                    <Radio className="text-blue-500" /> Public Safety Control
+                 </h3>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                    {[
+                      "Evacuate building immediately via nearest exit",
+                      "Do not enter this zone - active suppression",
+                      "Fire department is en route - stay calm",
+                      "All clear - system returning to normal"
+                    ].map((msg, i) => (
+                      <button key={i} onClick={() => broadcastMsg(msg)}
+                        className="p-4 text-left border border-zinc-800 bg-black hover:border-blue-500 hover:bg-blue-950/20 transition-all rounded-lg group">
+                        <div className="text-[8px] text-zinc-600 font-bold uppercase mb-1">Preset {i+1}</div>
+                        <div className="text-xs text-zinc-300 font-bold group-hover:text-blue-400">{msg}</div>
+                      </button>
+                    ))}
+                 </div>
+                 <div className="space-y-4">
+                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Manual Broadcast Override</label>
+                    <div className="flex gap-2">
+                       <input type="text" placeholder="Enter custom message..." 
+                        className="flex-1 bg-black border border-zinc-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500" />
+                       <button className="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3 rounded-lg text-xs uppercase italic tracking-widest">Transmit</button>
+                    </div>
+                 </div>
+              </div>
+           </div>
+           <div className="space-y-6">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6">
+                 <div className="text-[10px] font-bold text-zinc-500 tracking-[0.3em] uppercase mb-4">Active Response Protocol</div>
+                 <div className="space-y-4">
+                    {[
+                      { step: 1, label: "Detection", status: state.fire_detected ? "DONE" : "WAITING", active: state.fire_detected },
+                      { step: 2, label: "Alarm Trigger", status: state.fire_detected ? "ACTIVE" : "PENDING", active: state.fire_detected },
+                      { step: 3, label: "Suppression", status: state.nozzles?.some(n=>n.active) ? "ACTIVE" : "PENDING", active: state.nozzles?.some(n=>n.active) },
+                      { step: 4, label: "Evacuation", status: state.emergency_mode ? "ACTIVE" : "PENDING", active: state.emergency_mode }
+                    ].map(s => (
+                      <div key={s.step} className={`flex items-center gap-4 p-3 rounded-lg border ${s.active ? 'border-blue-900/50 bg-blue-950/20' : 'border-zinc-800 bg-zinc-900/20'}`}>
+                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${s.active ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{s.step}</div>
+                         <div className="flex-1">
+                            <div className={`text-[10px] font-black uppercase ${s.active ? 'text-white' : 'text-zinc-500'}`}>{s.label}</div>
+                            <div className={`text-[8px] font-bold ${s.active ? 'text-blue-400 animate-pulse' : 'text-zinc-600'}`}>{s.status}</div>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {activeTab === "emergency" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 space-y-6">
+                 <div className="rounded-2xl border-2 border-red-600 bg-red-950/20 p-8 shadow-[0_0_50px_rgba(220,38,38,0.1)]">
+                    <div className="flex justify-between items-start mb-8">
+                       <div>
+                          <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white leading-none">Emergency Response <span className="text-red-600">Active</span></h2>
+                          <p className="text-sm font-bold text-red-500 mt-2 uppercase tracking-widest animate-pulse">Critical Fire Vector Confirmed // Zone {state.zone}</p>
+                       </div>
+                       <button onClick={triggerSOS} className="bg-red-600 hover:bg-red-500 text-white font-black px-8 py-4 rounded-lg text-lg uppercase italic tracking-tighter shadow-lg shadow-red-950 animate-bounce transition-all">Manual SOS</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                       <div className="space-y-6">
+                          <div className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-l-2 border-red-600 pl-4">Live Fire Analysis</div>
+                          <div className="space-y-4">
+                             {state.fires?.map((f, i) => (
+                               <div key={i} className="bg-black/40 border border-red-900/50 rounded-xl p-4 flex items-center justify-between">
+                                  <div>
+                                     <div className="text-[10px] font-black text-red-500 uppercase">Vector 0{i+1}</div>
+                                     <div className="text-xl font-black italic">{f.label || "CLASS A"}</div>
+                                  </div>
+                                  <div className="text-right">
+                                     <div className="text-[10px] font-bold text-zinc-500 uppercase">Intensity</div>
+                                     <div className="text-lg font-black text-red-500">{(f.intensity?.score * 100)?.toFixed(0)}%</div>
+                                  </div>
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                       <div className="space-y-6">
+                          <div className="text-[10px] font-black text-zinc-400 uppercase tracking-widest border-l-2 border-red-600 pl-4">Safety Indicators</div>
+                          <div className="grid grid-cols-2 gap-4">
+                             <div className="bg-black/40 border border-zinc-800 rounded-xl p-4 text-center">
+                                <div className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Humans</div>
+                                <div className={`text-2xl font-black ${humanCount > 0 ? "text-yellow-500 animate-pulse" : "text-emerald-500"}`}>{humanCount > 0 ? "AT RISK" : "SECURE"}</div>
+                             </div>
+                             <div className="bg-black/40 border border-zinc-800 rounded-xl p-4 text-center">
+                                <div className="text-[10px] font-bold text-zinc-500 uppercase mb-2">Systems</div>
+                                <div className="text-2xl font-black text-blue-500">ENGAGED</div>
+                             </div>
+                          </div>
+                          <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-6">
+                             <div className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-4">Event Timeline</div>
+                             <div className="space-y-4 relative">
+                                <div className="absolute left-1.5 top-0 bottom-0 w-0.5 bg-zinc-800"/>
+                                {[
+                                  { t: "12:04:12", e: "Fire Detection Triggered - Vector North" },
+                                  { t: "12:04:15", e: "Automated Suppression Engaged - Nozzle 1 & 2" },
+                                  { t: "12:04:22", e: "Emergency Mode Global Activation" },
+                                  { t: "12:04:45", e: "Fire Dept Notification Sent" }
+                                ].map((item, i) => (
+                                  <div key={i} className="flex gap-4 relative z-10">
+                                     <div className="w-3 h-3 rounded-full bg-red-600 border-2 border-zinc-950 mt-1"/>
+                                     <div>
+                                        <div className="text-[8px] font-mono text-zinc-600">{item.t}</div>
+                                        <div className="text-[10px] font-bold text-zinc-300">{item.e}</div>
+                                     </div>
+                                  </div>
+                                ))}
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+              <div className="space-y-6">
+                 <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+                    <h3 className="text-sm font-black uppercase italic tracking-tighter mb-6 flex items-center gap-2">
+                       <MapPin size={16} className="text-blue-500" /> Nearby Fire Stations
+                    </h3>
+                    <div className="space-y-4">
+                       {(state.nearby_stations || []).map((s, i) => (
+                         <div key={i} className="p-4 rounded-xl bg-black border border-zinc-800 hover:border-blue-500 transition-colors cursor-pointer group">
+                            <div className="flex justify-between items-start mb-2">
+                               <div className="text-xs font-black text-zinc-200 group-hover:text-blue-400">{s.name}</div>
+                               <div className="text-[10px] font-mono text-zinc-500">{s.dist}</div>
+                            </div>
+                            <div className="text-[8px] font-bold text-zinc-600 uppercase tracking-widest">En Route Time: ~{Math.floor(Math.random()*8)+3} mins</div>
+                         </div>
+                       ))}
+                    </div>
+                    <button className="w-full mt-6 py-3 border border-zinc-700 bg-transparent hover:bg-zinc-800 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">View Unified Response Map</button>
+                 </div>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {activeTab === "dashboard" && (
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 content-start">
 
         {/* ── Charts column ────────────────────────────── */}
         <div className="xl:col-span-1 space-y-4">
@@ -875,6 +1142,7 @@ export default function App() {
           </div>
         </div>
       </div>
+    )}
 
       {/* ── Footer ───────────────────────────────────────── */}
       <footer className="mt-12 flex justify-between items-center text-[9px] text-zinc-800 font-bold tracking-[0.4em] uppercase border-t border-zinc-900 pt-6">

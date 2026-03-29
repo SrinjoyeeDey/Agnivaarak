@@ -1,9 +1,20 @@
 # 🔥 FireSuppressor v1.0
 ### Autonomous Fire Detection & Suppression System
 
-> **Hackathon Build · Indoor Mall · 3-Day Sprint**
-> 
-> ⚠️ **All actuator code is SIMULATED by default. No real water is released unless `--real-hardware` is explicitly set on a properly wired Raspberry Pi.**
+> **Development Version: 2026.03.27-v21 (4-Nozzle / Expert Classification)**
+>
+> ⚠️ **All actuator code is SIMULATED by default. No real water is released unless `--real-hardware` is explicitly set on a properly wired Raspberry Pi or Arduino.**
+
+---
+
+## 🌟 New Features (v21)
+
+- **Fire Authenticity Verification**: Advanced temporal analysis (flicker, motion, shape variance) to eliminate false positives from screens or reflections.
+- **Expert Classification**: Real-time distinction between **NORMAL (Class A)** and **Blue Flame (Class B)** fires with optimized HSV thresholds.
+- **Emergency Dashboard**: Dedicated surveillance tab with real-time sensor graphs (Temperature, IR, Humidity), SOS alerts, and nearby station tracking.
+- **Hardware Sensor Fusion**: Integrated physical validation using infrared and thermal sensor data.
+- **Arduino Serial Bridge**: Robust 1:1 decision-to-hardware communication protocol for precise pan/tilt and pump control.
+- **Intensity-Aware Physics**: Simulated pressure gauge that reacts dynamically to fire severity and suppression activity.
 
 ---
 
@@ -33,14 +44,16 @@ python models/download_models.py
 
 1. **Start the Backend Node** (Terminal 1)
 ```bash
-python main.py --demo (For Demo only, no real detection)
+# Core execution with camera 0
+python firesuppressor/main.py --camera 0
 
-.\.venv\Scripts\python.exe firesuppressor/main.py --camera 0 (To open Dashcam)
+# Expert simulation mode (authenticity tests)
+python firesuppressor/main.py --demo --simulate-fake-fire --simulate-sensors
 ```
 
 2. **Start the Dashboard** (Terminal 2)
 ```bash
-cd frontend
+cd firesuppressor/frontend
 npm install
 npm start
 ```
@@ -48,186 +61,97 @@ Open [http://localhost:3000](http://localhost:3000) to view the live dashboard.
 
 ---
 
-## Docker (All-in-one)
+## CLI Reference
 
-```bash
-# Build
-docker build -t firesuppressor:latest .
-
-# Run single node (demo)
-docker run --rm -p 8000:8000 -e DEMO_MODE=1 firesuppressor:latest
-
-# Run 3-node simulation + MQTT broker + frontend
-docker-compose up --build
-```
-
-After startup:
-| Service       | URL                        |
-|---------------|----------------------------|
-| API Node 1    | http://localhost:8001/docs  |
-| API Node 2    | http://localhost:8002/docs  |
-| API Node 3    | http://localhost:8003/docs  |
-| Dashboard     | http://localhost:3000       |
-| MQTT          | localhost:1883              |
+| Flag | Description |
+|------|-------------|
+| `--demo` | Synthetic simulation mode (no camera required) |
+| `--camera <id>` | Use local webcam index (e.g., 0) |
+| `--video <path>` | Process a recorded video file |
+| `--real-hardware` | ⚠️ Enable GPIO/Serial communication for physical actuators |
+| `--simulate-sensors` | Add real-time jitter and heat/IR variance to sensor readings |
+| `--simulate-fake-fire` | Force low authenticity scores (for screen testing) |
+| `--simulate-real-fire` | Force high authenticity scores (physical fire test) |
+| `--collect-data` | Save detection frames for model fine-tuning |
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     INDOOR MALL NODE                          │
-│                                                              │
-│  ┌──────────┐   ┌───────────┐   ┌──────────────────────┐   │
-│  │FrameSource│──▶│FireDetector│  │HumanDetector (COCO)  │   │
-│  │(OpenCV)  │   │(YOLOv8s)  │  └──────────┬───────────┘   │
-│  └──────────┘   └─────┬─────┘             │               │
-│                       │fires               │humans          │
-│                       ▼                   ▼               │
-│               ┌───────────────────────────────┐           │
-│               │     IntensityAnalyzer          │           │
-│               │  (bbox area + brightness + HSV)│           │
-│               └──────────────┬────────────────┘           │
-│                              │                             │
-│                              ▼                             │
-│                    ┌──────────────────┐                   │
-│                    │  DecisionEngine  │                   │
-│                    │  ┌────────────┐  │                   │
-│                    │  │ FireQueue  │  │                   │
-│                    │  │(priority)  │  │                   │
-│                    │  └────────────┘  │                   │
-│                    │  ┌────────────┐  │                   │
-│                    │  │NozzleSel.  │  │                   │
-│                    │  │(angle map) │  │                   │
-│                    │  └────────────┘  │                   │
-│                    └────────┬─────────┘                   │
-│                             │ Actions                      │
-│                             ▼                             │
-│                  ┌─────────────────────┐                  │
-│                  │  NozzleController   │                  │
-│                  │  (SIM or GPIO/PWM)  │                  │
-│                  └─────────────────────┘                  │
-│                             │                             │
-│            ┌────────────────┼──────────────┐             │
-│            ▼                ▼              ▼             │
-│      nozzle_1 (0°)   nozzle_2 (90°)  ...  nozzle_4 (270°)│
-│                                                          │
-│  ┌────────────────────────────────┐                      │
-│  │  FastAPI  /status  /ws  /alerts│                      │
-│  │  + MQTT publish (paho)         │◀─────── Other nodes  │
-│  └────────────────────────────────┘                      │
-└──────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                           INDOOR MALL NODE (v21)                              │
+│                                                                               │
+│  ┌──────────┐    ┌─────────────┐    ┌───────────────────────────────────┐    │
+│  │FrameSource│──▶│FireDetector │    │ FireAuthenticityAnalyzer (NEW)    │    │
+│  │(OpenCV)   │    │(YOLOv8s)    │──▶ │ (Flicker/Motion/Sensor Fusion)    │    │
+│  └──────────┘    └──────┬──────┘    └─────────────────┬─────────────────┘    │
+│                         │fires                        │verified score        │
+│                         ▼                             ▼                      │
+│                  ┌──────────────────────────────────────────────┐            │
+│                  │           DecisionEngine (Expert)            │            │
+│                  │  (1:1 Assignment / Intensity-Aware Scaling)  │            │
+│                  └──────────────┬───────────────────────────────┘            │
+│                                 │ Actions                                    │
+│                                 ▼                                            │
+│                  ┌─────────────────────────────────────────────┐             │
+│                  │            Hardware Controller              │             │
+│                  │  ┌──────────────────┐  ┌────────────────┐  │             │
+│                  │  │ Nozzle (GPIO)    │  │ Arduino Serial │  │             │
+│                  │  └──────────────────┘  └────────────────┘  │             │
+│                  └──────────────┬─────────────────────────────┘             │
+│                                 │                                            │
+│            ┌────────────────────┼─────────────────────┐                      │
+│            ▼                    ▼                     ▼                      │
+│      Nozzle 1 (0°)        Nozzle 2 (90°)        ...   Nozzle 4 (270°)        │
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────┐              │
+│  │  FastAPI (v1.0) /status /emergency /sensors /ws           │              │
+│  │  + MQTT Enhanced Event Bus (Real-time telemetry)           │◀── Other Nodes│
+│  └────────────────────────────────────────────────────────────┘              │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## AI Models
+## AI & Vision Pipeline
 
-| Model | Source | Purpose | mAP50 |
-|-------|--------|---------|-------|
-| YOLOv8s (fire fine-tuned) | [keremberke/yolov8s-fire-detection](https://huggingface.co/keremberke/yolov8s-fire-detection) | Detect fire & smoke bounding boxes | ~0.87 |
-| YOLOv8n (COCO) | [Ultralytics](https://github.com/ultralytics/assets) | Human detection (person class) | ~0.55 |
-| Colour HSV fallback | Rule-based | Offline fire detection | — |
+| Component | Method | Purpose |
+|-------|--------|---------|
+| **Primary Detector** | YOLOv8s | Detect fire & smoke bounding boxes (mAP50: 0.87) |
+| **Authenticity** | Temporal | Flicker analysis (10Hz) & variance tracking |
+| **Classifier** | HSV/Expert | Class A (Orange/Yellow) vs Class B (Blue) distinction |
+| **Human Safe** | YOLOv8n | 60px safety radius; shifts to "SURROUND" mode near humans |
 
 ---
 
-## API Reference
+## API Reference (Emergency v2)
 
 ```bash
-# Health
-curl http://localhost:8000/
-
-# Full status snapshot
+# System Readiness
 curl http://localhost:8000/status
 
-# Last 50 alerts
-curl http://localhost:8000/alerts
+# Real-time Sensors
+curl http://localhost:8000/sensors
 
-# Manual nozzle activation
+# Trigger SOS Dispatch
+curl -X POST http://localhost:8000/sos-alert \
+  -H "Content-Type: application/json" \
+  -d '{"location": "Section-A", "severity": "CRITICAL"}'
+
+# Speaker Announcement
+curl -X POST http://localhost:8000/speaker-control \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Fire detected in North Wing. Evacuate!"}'
+
+# Manual Override
 curl -X POST http://localhost:8000/manual-control \
   -H "Content-Type: application/json" \
-  -d '{"nozzle_id": 2, "pressure": "HIGH"}'
+  -d '{"nozzle_id": 1, "pressure": "HIGH", "agent": "FOAM"}'
 
-# Emergency stop
-curl -X POST http://localhost:8000/emergency-stop
-
-# Clear emergency stop
-curl -X POST http://localhost:8000/clear-emergency-stop
-
-# WebSocket (curl example)
-# wscat -c ws://localhost:8000/ws
-```
-
----
-
-## Training (Optional – Already Pre-trained)
-
-```bash
-# 1. Prepare dataset
-export RF_API_KEY=your_roboflow_key
-python models/train_fire_yolo.py --prep
-
-# 2. Fine-tune YOLOv8s on fire dataset
-python models/train_fire_yolo.py --train \
-  --data data/fire.yaml \
-  --epochs 50 \
-  --batch 16 \
-  --imgsz 640 \
-  --lr 1e-3
-
-# 3. Export to ONNX + benchmark
-python models/export_models.py --all --benchmark
-```
-
----
-
-## Model Performance
-
-| Model | Format | FPS (i5 CPU) | FPS (RPi 4) |
-|-------|--------|-------------|-------------|
-| YOLOv8n | PyTorch | ~18 | ~4 |
-| YOLOv8n | ONNX | ~28 | ~7 |
-| YOLOv8s (fire) | PyTorch | ~12 | ~2.5 |
-| YOLOv8s (fire) | ONNX | ~20 | ~5 |
-
-*Both models run concurrently; total pipeline: ~8–10 FPS on laptop CPU.*
-
----
-
-## Testing
-
-```bash
-pytest tests/ -v --tb=short
-pytest tests/ -v --cov=. --cov-report=term-missing
-```
-
----
-
-## Safety Interlocks
-
-1. **Simulation-first**: All actuators print logs; no GPIO unless `--real-hardware`
-2. **Human exclusion**: 60 px radius → SURROUND mode (no direct spray)
-3. **Emergency stop**: REST `/emergency-stop`, WS `{"cmd":"emergency_stop"}`, MQTT global topic
-4. **Max nozzles**: Hard limit of 4 concurrent; excess → pressure boost, no new activations
-5. **Cooldown**: Nozzles auto-deactivate 2 s after last fire detection
-6. **Hardware interlock**: Physical NC e-stop button cuts main relay power rail
-
----
-
-## 3-Day Gantt
-
-```
-Day 1 (Setup + Vision)
-  AM: Environment, Docker, model download
-  PM: Fire detector, human detector, intensity analyzer
-
-Day 2 (Logic + Backend + Hardware)
-  AM: Decision engine, fire queue, nozzle selector
-  PM: Nozzle controller (sim), FastAPI endpoints, MQTT
-
-Day 3 (Integration + Frontend + Demo)
-  AM: React dashboard, WebSocket, multi-node test
-  PM: Demo script, tests, documentation, presentation
+# Emergency Snapshot Retrieval
+# Photos are automatically saved to /emergency_snapshots and served via
+# http://localhost:8000/snapshots/<filename>.jpg
 ```
 
 ---
@@ -236,40 +160,31 @@ Day 3 (Integration + Frontend + Demo)
 
 ```
 firesuppressor/
-├── main.py                    ← Entry point
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── models/
-│   ├── weights/               ← Downloaded .pt / .onnx files
-│   ├── download_models.py     ← Fetch + verify weights
-│   ├── export_models.py       ← ONNX export + benchmark
-│   └── train_fire_yolo.py     ← Fine-tuning script
+├── main.py                    ← Orchestrator (entry point)
 ├── vision/
-│   ├── capture.py             ← Frame source (webcam/video/demo)
-│   ├── fire_detector.py       ← YOLOv8 fire/smoke detection
-│   ├── human_detector.py      ← YOLOv8 person detection
-│   └── intensity_analyzer.py  ← Rule-based intensity scoring
+│   ├── fire_detector.py       ← YOLOv8 detection
+│   ├── fire_authenticity.py   ← NEW: Flicker/Motion analysis
+│   └── fire_classifier.py     ← Expert Class A/B logic
 ├── logic/
-│   ├── decision_engine.py     ← Core decision logic + safety
-│   ├── fire_queue.py          ← Priority target queue
-│   └── nozzle_selector.py     ← Angle → nozzle mapping
+│   ├── decision_engine.py     ← Real-time strategy & assignment
+│   └── fire_queue.py          ← Priority-based target tracking
 ├── hardware/
-│   ├── nozzle_controller.py   ← Simulated + GPIO actuator
-│   └── camera_controller.py   ← Pan-tilt simulation + PCA9685
+│   ├── arduino_comm.py        ← NEW: Serial bridge for Arduino
+│   └── nozzle_controller.py   ← 4-Port GPIO abstraction
 ├── network/
-│   ├── mqtt_client.py         ← paho-mqtt wrapper
-│   └── device_coordinator.py  ← Multi-node coordination
+│   ├── mqtt_client.py         ← Telemetry broadcasting
+│   └── emergency_notifier.py  ← Screenshot & dispatch logic
 ├── backend/
-│   └── app.py                 ← FastAPI app factory
-├── frontend/
-│   ├── src/App.jsx            ← React dashboard
-│   └── package.json
-├── scripts/
-│   └── demo_simulation.py     ← Standalone demo (no deps)
-├── tests/
-│   └── test_full_system.py    ← Full pytest suite
-└── docs/
-    ├── wiring_diagram.md
-    └── mosquitto.conf
+│   └── app.py                 ← FastAPI REST/WebSocket server
+├── frontend/                  ← React Dashboard (Pressure Gauge/Sensor Graphs)
+└── tests/                     ← Comprehensive Pytest suite
 ```
+
+---
+
+## Safety & Compliance
+
+1. **Self-Monitoring**: System checks infrared/heat variance before activation.
+2. **Human Safety**: Active human tracking disables direct spray zones.
+3. **Hardware Watchdog**: Arduino bridge resets to safe state if serial heartbeat is lost.
+4. **Non-Destructive Testing**: Full simulation mode available using `--demo` and `--simulate-fake-fire`.
